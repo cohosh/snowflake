@@ -40,7 +40,7 @@ func NewBrokerContext() *BrokerContext {
 		snowflakes:    snowflakes,
 		idToSnowflake: make(map[string]*Snowflake),
 		proxyPolls:    make(chan *ProxyPoll),
-		metrics:       new(Metrics),
+		metrics:       NewMetrics(),
 	}
 }
 
@@ -156,6 +156,10 @@ func clientOffers(ctx *BrokerContext, w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
+
+        // Get client country stats
+        ctx.metrics.UpdateCountryStats(r.RemoteAddr)
+
 	// Immediately fail if there are no snowflakes available.
 	if ctx.snowflakes.Len() <= 0 {
 		log.Println("Client: No snowflake proxies available.")
@@ -213,6 +217,7 @@ func debugHandler(ctx *BrokerContext, w http.ResponseWriter, r *http.Request) {
 		s += fmt.Sprintf("\nsnowflake %d: %s", snowflake.index, snowflake.id)
 	}
 	s += fmt.Sprintf("\n\nroundtrip avg: %d", ctx.metrics.clientRoundtripEstimate)
+	s += fmt.Sprintf("\n\nclient country stats: %s", ctx.metrics.countryStats.Display())
 	w.Write([]byte(s))
 }
 
