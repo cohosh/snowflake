@@ -268,3 +268,17 @@ func TestSnowflakeHeap(t *testing.T) {
 		So(r.index, ShouldEqual, -1)
 	})
 }
+
+func TestGeoip(t *testing.T) {
+	Convey("Geoip", t, func() {
+            tv4 := new(GeoIPv4Table)
+            err := GeoIPLoadFile(tv4, "./geoip")
+            So(err, ShouldEqual, nil)
+            tv6 := new(GeoIPv6Table)
+            err = GeoIPLoadFile(tv6, "./geoip6")
+            So(err, ShouldEqual, nil)
+
+            So(GetCountryByAddr(tv4, "129.97.208.23"), ShouldEqual, "CA")
+            So(GetCountryByAddr(tv6, "2620:101:f000:0:250:56ff:fe80:168e"), ShouldEqual, "CA")
+        })
+    }
