@@ -59,6 +59,7 @@ func (m Metrics) LoadGeoipDatabases(geoipDB string, geoip6DB string) {
             m.tablev4 = nil
             log.Println("Failed to load geoip database ")
         } else {
+            m.tablev4 = nil // garbage collect previous table, if applicable
             m.tablev4 = tablev4
         }
 
@@ -68,6 +69,7 @@ func (m Metrics) LoadGeoipDatabases(geoipDB string, geoip6DB string) {
             m.tablev6 = nil
             log.Println("Failed to load geoip6 database ")
         } else {
+            m.tablev6 = nil // garbage collect previous table, if applicable
             m.tablev6 = tablev6
         }
 }

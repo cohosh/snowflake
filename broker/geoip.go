@@ -118,7 +118,6 @@ func (table *GeoIPv6Table) parseEntry(candidate string) error {
     parsedCandidate := strings.Split(candidate, ",")
 
     if len(parsedCandidate) != 3 {
-        log.Println("Received strings", parsedCandidate)
         return &GeoipError{
             problem: "Provided geoip file is incorrectly formatted",
         }

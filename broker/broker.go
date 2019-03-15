@@ -15,6 +15,9 @@ import (
 	"net/http"
 	"strings"
 	"time"
+        "os"
+        "os/signal"
+        "syscall"
 
 	"golang.org/x/crypto/acme/autocert"
 )
@@ -261,6 +264,20 @@ func main() {
 	server := http.Server{
 		Addr: addr,
 	}
+
+        sigChan := make(chan os.Signal, 1)
+        signal.Notify(sigChan, syscall.SIGHUP)
+
+        // go routine to handle a SIGHUP signal to allow the broker operator to send
+        // a SIGHUP signal when the geoip database files are updated, without requiring
+        // a restart of the broker
+        go func () {
+                for {
+                        signal := <-sigChan
+                        log.Println("Received signal:", signal, ". Reloading geoip databases.")
+                        ctx.metrics.LoadGeoipDatabases(geoipDatabase, geoip6Database)
+                }
+        }()
 
 	if acmeHostnamesCommas != "" {
 		acmeHostnames := strings.Split(acmeHostnamesCommas, ",")
