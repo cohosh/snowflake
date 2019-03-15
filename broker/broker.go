@@ -230,17 +230,23 @@ func main() {
 	var acmeEmail string
 	var acmeHostnamesCommas string
 	var addr string
+        var geoipDatabase string
+        var geoip6Database string
 	var disableTLS bool
 
 	flag.StringVar(&acmeEmail, "acme-email", "", "optional contact email for Let's Encrypt notifications")
 	flag.StringVar(&acmeHostnamesCommas, "acme-hostnames", "", "comma-separated hostnames for TLS certificate")
 	flag.StringVar(&addr, "addr", ":443", "address to listen on")
+        flag.StringVar(&geoipDatabase, "geoipdb", "/usr/share/tor/geoip", "path to correctly formatted geoip database mapping IPv4 address ranges to country codes")
+        flag.StringVar(&geoip6Database, "geoip6db", "/usr/share/tor/geoip6", "path to correctly formatted geoip database mapping IPv6 address ranges to country codes")
 	flag.BoolVar(&disableTLS, "disable-tls", false, "don't use HTTPS")
 	flag.Parse()
 
 	log.SetFlags(log.LstdFlags | log.LUTC)
 
 	ctx := NewBrokerContext()
+
+        ctx.metrics.LoadGeoipDatabases(geoipDatabase, geoip6Database)
 
 	go ctx.Broker()
 

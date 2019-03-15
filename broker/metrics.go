@@ -47,13 +47,12 @@ func (m Metrics) UpdateCountryStats(addr string) {
 
 }
 
-func NewMetrics() *Metrics {
-	m := new(Metrics)
+func (m Metrics) LoadGeoipDatabases(geoipDB string, geoip6DB string) {
 
         // Load geoip databases
         log.Println("Loading geoip databases")
         tablev4 := new(GeoIPv4Table)
-        err := GeoIPLoadFile(tablev4, "./geoip")
+        err := GeoIPLoadFile(tablev4, geoipDB)
         if err != nil {
             m.tablev4 = nil
             log.Println("Failed to load geoip database ")
@@ -62,13 +61,17 @@ func NewMetrics() *Metrics {
         }
 
         tablev6 := new(GeoIPv6Table)
-        err = GeoIPLoadFile(tablev6, "./geoip6")
+        err = GeoIPLoadFile(tablev6, geoip6DB)
         if err != nil {
             m.tablev6 = nil
-            log.Println("Failed to load geoip database ")
+            log.Println("Failed to load geoip6 database ")
         } else {
             m.tablev6 = tablev6
         }
+}
+
+func NewMetrics() *Metrics {
+	m := new(Metrics)
 
         m.countryStats = CountryStats{
             counts: make(map[string]int),
