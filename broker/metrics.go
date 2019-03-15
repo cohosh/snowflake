@@ -6,6 +6,7 @@ import (
         "net"
         "fmt"
         "log"
+        "os"
 )
 
 type CountryStats struct {
@@ -77,9 +78,31 @@ func (m Metrics) LoadGeoipDatabases(geoipDB string, geoip6DB string) {
 func NewMetrics() *Metrics {
 	m := new(Metrics)
 
+        f, err := os.OpenFile("metrics.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+
+        if err != nil {
+            log.Println("Couldn't open file for metrics logging")
+            return nil
+        }
+
+        metricsLogger := log.New(f, "", log.LstdFlags | log.LUTC)
+
         m.countryStats = CountryStats{
             counts: make(map[string]int),
         }
+
+        // Write to log file every hour with updated metrics
+        heartbeat := time.Tick(time.Hour)
+        go func() {
+            for {
+                <-heartbeat
+                metricsLogger.Println("Country stats: ", m.countryStats.Display())
+
+                //restore all metrics to original values
+                m.countryStats.counts = make(map[string]int)
+
+            }
+        }()
 
 	return m
 }
