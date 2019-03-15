@@ -278,7 +278,14 @@ func TestGeoip(t *testing.T) {
             err = GeoIPLoadFile(tv6, "./geoip6")
             So(err, ShouldEqual, nil)
 
-            So(GetCountryByAddr(tv4, "129.97.208.23"), ShouldEqual, "CA")
+            So(GetCountryByAddr(tv4, "129.97.208.23"), ShouldEqual, "CA") //University of Waterloo
+            So(GetCountryByAddr(tv4, "127.0.0.1"), ShouldEqual, "")
+            So(GetCountryByAddr(tv4, "0.0.0.0"), ShouldEqual, "")
+            So(GetCountryByAddr(tv4, "255.255.255.255"), ShouldEqual, "")
+
             So(GetCountryByAddr(tv6, "2620:101:f000:0:250:56ff:fe80:168e"), ShouldEqual, "CA")
+            So(GetCountryByAddr(tv6, "fd00:0:0:0:0:0:0:1"), ShouldEqual, "")
+            So(GetCountryByAddr(tv6, "0:0:0:0:0:0:0:0"), ShouldEqual, "")
+            So(GetCountryByAddr(tv6, "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"), ShouldEqual, "")
         })
     }

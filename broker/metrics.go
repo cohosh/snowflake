@@ -43,7 +43,9 @@ func (m Metrics) UpdateCountryStats(addr string) {
     }
 
     //update map of countries and counts
-    m.countryStats.counts[country] = m.countryStats.counts[country] + 1
+    if country != "" {
+        m.countryStats.counts[country] = m.countryStats.counts[country] + 1
+    }
 
 }
 

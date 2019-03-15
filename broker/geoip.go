@@ -175,6 +175,20 @@ func GeoIPRangeClosure(key net.IP, entry GeoIPEntry) bool {
     return true
 }
 
+func GeoIPCheckRange (key net.IP, entry GeoIPEntry) bool {
+    a := key.To16()
+    b := entry.ipLow.To16()
+    c := entry.ipHigh.To16()
+
+    for i, v := range a {
+        if v < b[i] || v > c[i] {
+            return false
+        }
+    }
+
+    return true
+}
+
 //Returns the country location of an IPv4 or IPv6 address.
 func GetCountryByAddr(table GeoIPTable, addr string) string {
     //translate addr string to IP
@@ -185,7 +199,15 @@ func GetCountryByAddr(table GeoIPTable, addr string) string {
         return GeoIPRangeClosure(ip, table.ElementAt(i))
     })
 
-    if index == -1 {
+    if index == table.Len() {
+        return ""
+    }
+
+    // check to see if addr is in the range specified by the returned index
+    // search on IPs in invalid ranges (e.g., 127.0.0.0/8) will return the
+    //country code of the next highest range
+    log.Println("Checking index ", index)
+    if ! GeoIPCheckRange(ip, table.ElementAt(index)) {
         return ""
     }
 
