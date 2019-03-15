@@ -287,5 +287,11 @@ func TestGeoip(t *testing.T) {
             So(GetCountryByAddr(tv6, "fd00:0:0:0:0:0:0:1"), ShouldEqual, "")
             So(GetCountryByAddr(tv6, "0:0:0:0:0:0:0:0"), ShouldEqual, "")
             So(GetCountryByAddr(tv6, "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"), ShouldEqual, "")
+
+            // Make sure things behave properly if geoip file fails to load
+            ctx := NewBrokerContext()
+            ctx.metrics.LoadGeoipDatabases("invalid_filename", "invalid_filename6")
+            ctx.metrics.UpdateCountryStats("127.0.0.1")
+
         })
     }
