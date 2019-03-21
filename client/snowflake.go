@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+        "regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -22,6 +23,23 @@ import (
 const (
 	DefaultSnowflakeCapacity = 1
 )
+
+// An io.Writer that can be used as the output for a logger that first
+// sanitizes logs and then writes to the provided io.Writer
+type logScrubber struct {
+	output io.Writer
+}
+
+func (ls *logScrubber) Write(b []byte) (n int, err error) {
+	//First scrub the input of IP addresses
+	reIPv4 := regexp.MustCompile(`\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b`)
+        //Note that for embedded IPv4 address, the previous regex will scrub it
+        reIPv6 := regexp.MustCompile(`([0-9a-fA-F]{0,4}:){2,7}([0-9a-fA-F]{0,4})?`)
+	scrubbedBytes := reIPv4.ReplaceAll(b, []byte("X.X.X.X"))
+	scrubbedBytes = reIPv6.ReplaceAll(scrubbedBytes,
+		[]byte("X:X:X:X:X:X:X:X"))
+	return ls.output.Write(scrubbedBytes)
+}
 
 // Maintain |SnowflakeCapacity| number of available WebRTC connections, to
 // transfer to the Tor SOCKS handler when needed.
@@ -91,7 +109,9 @@ func main() {
 			log.Fatal(err)
 		}
 		defer logFile.Close()
-		log.SetOutput(logFile)
+		//We want to send the log output through our scrubber first
+		scrubber := &logScrubber{logFile}
+		log.SetOutput(scrubber)
 	} else {
 		// Don't write to stderr; versions of tor earlier than about
 		// 0.3.5.6 do not read from the pipe, and eventually we will

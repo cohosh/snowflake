@@ -10,9 +10,11 @@ import (
 	"crypto/tls"
 	"flag"
 	"fmt"
+        "io"
 	"io/ioutil"
 	"log"
 	"net/http"
+        "regexp"
 	"strings"
 	"time"
         "os"
@@ -26,6 +28,23 @@ const (
 	ClientTimeout = 10
 	ProxyTimeout  = 10
 )
+
+// An io.Writer that can be used as the output for a logger that first
+// sanitizes logs and then writes to the provided io.Writer
+type logScrubber struct {
+	output io.Writer
+}
+
+func (ls *logScrubber) Write(b []byte) (n int, err error) {
+	//First scrub the input of IP addresses
+	reIPv4 := regexp.MustCompile(`\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b`)
+        //Note that for embedded IPv4 address, the previous regex will scrub it
+        reIPv6 := regexp.MustCompile(`([0-9a-fA-F]{0,4}:){2,7}([0-9a-fA-F]{0,4})?`)
+	scrubbedBytes := reIPv4.ReplaceAll(b, []byte("X.X.X.X"))
+	scrubbedBytes = reIPv6.ReplaceAll(scrubbedBytes,
+		[]byte("X:X:X:X:X:X:X:X"))
+	return ls.output.Write(scrubbedBytes)
+}
 
 type BrokerContext struct {
 	snowflakes *SnowflakeHeap
@@ -246,6 +265,9 @@ func main() {
 	flag.Parse()
 
 	log.SetFlags(log.LstdFlags | log.LUTC)
+        //We want to send the log output through our scrubber first
+        scrubber := &logScrubber{os.Stdout}
+        log.SetOutput(scrubber)
 
 	ctx := NewBrokerContext()
 
