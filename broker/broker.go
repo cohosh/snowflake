@@ -39,10 +39,10 @@ func (ls *logScrubber) Write(b []byte) (n int, err error) {
 	//First scrub the input of IP addresses
 	reIPv4 := regexp.MustCompile(`\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b`)
         //Note that for embedded IPv4 address, the previous regex will scrub it
-        reIPv6 := regexp.MustCompile(`([0-9a-fA-F]{0,4}:){2,7}([0-9a-fA-F]{0,4})?`)
+        reIPv6 := regexp.MustCompile(`\[([0-9a-fA-F]{0,4}:){2,7}([0-9a-fA-F]{0,4})?`)
 	scrubbedBytes := reIPv4.ReplaceAll(b, []byte("X.X.X.X"))
 	scrubbedBytes = reIPv6.ReplaceAll(scrubbedBytes,
-		[]byte("X:X:X:X:X:X:X:X"))
+		[]byte("[X:X:X:X:X:X:X:X"))
 	return ls.output.Write(scrubbedBytes)
 }
 

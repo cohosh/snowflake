@@ -86,4 +86,12 @@ func TestLogScrubber(t *testing.T) {
 		t.Errorf("log scrubber didn't scrub IPv6 address. Output: %s", string(buff.Bytes()))
 	}
 	buff.Reset()
+
+        //Make sure it doesn't scrub fingerprint
+        log.Printf("%s", "a=fingerprint:sha-256 33:B6:FA:F6:94:CA:74:61:45:4A:D2:1F:2C:2F:75:8A:D9:EB:23:34:B2:30:E9:1B:2A:A6:A9:E0:44:72:CC:74")
+
+        if bytes.Compare(buff.Bytes(), []byte("a=fingerprint:sha-256 33:B6:FA:F6:94:CA:74:61:45:4A:D2:1F:2C:2F:75:8A:D9:EB:23:34:B2:30:E9:1B:2A:A6:A9:E0:44:72:CC:74\n")) != 0 {
+            t.Errorf("log scrubber scrubbed fingerprint: %s", string(buff.Bytes()))
+        }
+        buff.Reset()
 }
