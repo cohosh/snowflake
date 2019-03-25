@@ -272,10 +272,10 @@ func TestSnowflakeHeap(t *testing.T) {
 func TestGeoip(t *testing.T) {
 	Convey("Geoip", t, func() {
             tv4 := new(GeoIPv4Table)
-            err := GeoIPLoadFile(tv4, "./geoip")
+            err := GeoIPLoadFile(tv4, "/usr/share/tor/geoip")
             So(err, ShouldEqual, nil)
             tv6 := new(GeoIPv6Table)
-            err = GeoIPLoadFile(tv6, "./geoip6")
+            err = GeoIPLoadFile(tv6, "/usr/share/tor/geoip6")
             So(err, ShouldEqual, nil)
 
             So(GetCountryByAddr(tv4, "129.97.208.23"), ShouldEqual, "CA") //University of Waterloo
