@@ -271,27 +271,27 @@ func TestSnowflakeHeap(t *testing.T) {
 
 func TestGeoip(t *testing.T) {
 	Convey("Geoip", t, func() {
-            tv4 := new(GeoIPv4Table)
-            err := GeoIPLoadFile(tv4, "/usr/share/tor/geoip")
-            So(err, ShouldEqual, nil)
-            tv6 := new(GeoIPv6Table)
-            err = GeoIPLoadFile(tv6, "/usr/share/tor/geoip6")
-            So(err, ShouldEqual, nil)
+		tv4 := new(GeoIPv4Table)
+		err := GeoIPLoadFile(tv4, "/usr/share/tor/geoip")
+		So(err, ShouldEqual, nil)
+		tv6 := new(GeoIPv6Table)
+		err = GeoIPLoadFile(tv6, "/usr/share/tor/geoip6")
+		So(err, ShouldEqual, nil)
 
-            So(GetCountryByAddr(tv4, "129.97.208.23"), ShouldEqual, "CA") //University of Waterloo
-            So(GetCountryByAddr(tv4, "127.0.0.1"), ShouldEqual, "")
-            So(GetCountryByAddr(tv4, "0.0.0.0"), ShouldEqual, "")
-            So(GetCountryByAddr(tv4, "255.255.255.255"), ShouldEqual, "")
+		So(GetCountryByAddr(tv4, "129.97.208.23"), ShouldEqual, "CA") //University of Waterloo
+		So(GetCountryByAddr(tv4, "127.0.0.1"), ShouldEqual, "")
+		So(GetCountryByAddr(tv4, "0.0.0.0"), ShouldEqual, "")
+		So(GetCountryByAddr(tv4, "255.255.255.255"), ShouldEqual, "")
 
-            So(GetCountryByAddr(tv6, "2620:101:f000:0:250:56ff:fe80:168e"), ShouldEqual, "CA")
-            So(GetCountryByAddr(tv6, "fd00:0:0:0:0:0:0:1"), ShouldEqual, "")
-            So(GetCountryByAddr(tv6, "0:0:0:0:0:0:0:0"), ShouldEqual, "")
-            So(GetCountryByAddr(tv6, "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"), ShouldEqual, "")
+		So(GetCountryByAddr(tv6, "2620:101:f000:0:250:56ff:fe80:168e"), ShouldEqual, "CA")
+		So(GetCountryByAddr(tv6, "fd00:0:0:0:0:0:0:1"), ShouldEqual, "")
+		So(GetCountryByAddr(tv6, "0:0:0:0:0:0:0:0"), ShouldEqual, "")
+		So(GetCountryByAddr(tv6, "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"), ShouldEqual, "")
 
-            // Make sure things behave properly if geoip file fails to load
-            ctx := NewBrokerContext()
-            ctx.metrics.LoadGeoipDatabases("invalid_filename", "invalid_filename6")
-            ctx.metrics.UpdateCountryStats("127.0.0.1")
+		// Make sure things behave properly if geoip file fails to load
+		ctx := NewBrokerContext()
+		ctx.metrics.LoadGeoipDatabases("invalid_filename", "invalid_filename6")
+		ctx.metrics.UpdateCountryStats("127.0.0.1")
 
-        })
-    }
+	})
+}
