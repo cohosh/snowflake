@@ -26,7 +26,7 @@ func (s CountryStats) Display() string {
     return fmt.Sprintln(s.counts)
 }
 
-func (m Metrics) UpdateCountryStats(addr string) {
+func (m *Metrics) UpdateCountryStats(addr string) {
 
     var country string
 
@@ -50,7 +50,7 @@ func (m Metrics) UpdateCountryStats(addr string) {
 
 }
 
-func (m Metrics) LoadGeoipDatabases(geoipDB string, geoip6DB string) {
+func (m *Metrics) LoadGeoipDatabases(geoipDB string, geoip6DB string) {
 
         // Load geoip databases
         log.Println("Loading geoip databases")

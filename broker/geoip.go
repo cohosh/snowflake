@@ -33,12 +33,15 @@ import(
     "strings"
     "log"
     "strconv"
+    "sync"
 )
 
 type GeoIPTable interface {
     parseEntry(string) error
     Len() int
     ElementAt(int) GeoIPEntry
+    Lock()
+    Unlock()
 }
 
 type GeoIPEntry struct {
@@ -47,8 +50,17 @@ type GeoIPEntry struct {
     country string
 }
 
-type GeoIPv4Table []GeoIPEntry
-type GeoIPv6Table []GeoIPEntry
+type GeoIPv4Table struct {
+    table []GeoIPEntry
+
+    lock sync.Mutex // synchronization for geoip table accesses and reloads
+}
+
+type GeoIPv6Table struct {
+    table []GeoIPEntry
+
+    lock sync.Mutex // synchronization for geoip table accesses and reloads
+}
 
 type GeoipError struct {
     problem string
@@ -58,11 +70,17 @@ func (e *GeoipError) Error() string {
     return e.problem
 }
 
-func (table GeoIPv4Table) Len() int { return len(table) }
-func (table GeoIPv6Table) Len() int { return len(table) }
+func (table GeoIPv4Table) Len() int { return len(table.table) }
+func (table GeoIPv6Table) Len() int { return len(table.table) }
 
-func (table GeoIPv4Table) ElementAt(i int) GeoIPEntry { return table[i] }
-func (table GeoIPv6Table) ElementAt(i int) GeoIPEntry { return table[i] }
+func (table GeoIPv4Table) ElementAt(i int) GeoIPEntry { return table.table[i] }
+func (table GeoIPv6Table) ElementAt(i int) GeoIPEntry { return table.table[i] }
+
+func (table *GeoIPv4Table) Lock() { (*table).lock.Lock() }
+func (table *GeoIPv6Table) Lock() { (*table).lock.Lock() }
+
+func (table *GeoIPv4Table) Unlock() { (*table).lock.Unlock() }
+func (table *GeoIPv6Table) Unlock() { (*table).lock.Unlock() }
 
 // Convert a geoip IP address represented as unsigned integer to net.IP
 func geoipStringToIP(ipStr string) net.IP {
@@ -103,7 +121,7 @@ func (table *GeoIPv4Table) parseEntry(candidate string) error {
         country:    parsedCandidate[2],
     }
 
-    *table = append(*table, geoipEntry)
+    (*table).table = append((*table).table, geoipEntry)
     return nil
 }
 
@@ -129,7 +147,7 @@ func (table *GeoIPv6Table) parseEntry(candidate string) error {
         country:    parsedCandidate[2],
     }
 
-    *table = append(*table, geoipEntry)
+    (*table).table = append((*table).table, geoipEntry)
     return nil
 }
 //Loads provided geoip file into our tables
@@ -142,6 +160,9 @@ func GeoIPLoadFile(table GeoIPTable, pathname string) error {
         return err
     }
     defer geoipFile.Close()
+
+    table.Lock()
+    defer table.Unlock()
 
     //read in strings and call parse function
     scanner := bufio.NewScanner(geoipFile)
@@ -193,6 +214,9 @@ func GetCountryByAddr(table GeoIPTable, addr string) string {
     //translate addr string to IP
     ip := net.ParseIP(addr)
 
+    table.Lock()
+    defer table.Unlock()
+
     //look IP up in database
     index := sort.Search(table.Len(), func(i int) bool {
         return GeoIPRangeClosure(ip, table.ElementAt(i))
@@ -205,7 +229,6 @@ func GetCountryByAddr(table GeoIPTable, addr string) string {
     // check to see if addr is in the range specified by the returned index
     // search on IPs in invalid ranges (e.g., 127.0.0.0/8) will return the
     //country code of the next highest range
-    log.Println("Checking index ", index)
     if ! GeoIPCheckRange(ip, table.ElementAt(index)) {
         return ""
     }
