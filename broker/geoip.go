@@ -27,6 +27,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
@@ -208,36 +209,6 @@ func GeoIPLoadFile(table GeoIPTable, pathname string) error {
 	return nil
 }
 
-//Determines whether the given IP address (key) is included in or less
-//than the IP range of the Geoip entry.
-//Outputs 0 if key is greater than the entry's IP range and 1 otherwise
-func GeoIPRangeSearch(key net.IP, entry GeoIPEntry) bool {
-	a := key.To16()
-	b := entry.ipHigh.To16()
-
-	for i, v := range a {
-		if v != b[i] {
-			return v < b[i]
-		}
-	}
-
-	return true
-}
-
-func GeoIPCheckRange(key net.IP, entry GeoIPEntry) bool {
-	a := key.To16()
-	b := entry.ipLow.To16()
-	c := entry.ipHigh.To16()
-
-	for i, v := range a {
-		if v < b[i] || v > c[i] {
-			return false
-		}
-	}
-
-	return true
-}
-
 //Returns the country location of an IPv4 or IPv6 address.
 func GetCountryByAddr(table GeoIPTable, addr string) (string, error) {
 	//translate addr string to IP
@@ -248,8 +219,11 @@ func GetCountryByAddr(table GeoIPTable, addr string) (string, error) {
 
 	//look IP up in database
 	index := sort.Search(table.Len(), func(i int) bool {
-		return GeoIPRangeSearch(ip, table.ElementAt(i))
+		entry := table.ElementAt(i)
+		return (bytes.Compare(ip.To16(), entry.ipHigh.To16()) <= 0)
 	})
+
+	log.Println("Returned index ", index)
 
 	if index == table.Len() {
 		return "", fmt.Errorf("IP address not found in table")
@@ -258,7 +232,9 @@ func GetCountryByAddr(table GeoIPTable, addr string) (string, error) {
 	// check to see if addr is in the range specified by the returned index
 	// search on IPs in invalid ranges (e.g., 127.0.0.0/8) will return the
 	//country code of the next highest range
-	if !GeoIPCheckRange(ip, table.ElementAt(index)) {
+	entry := table.ElementAt(index)
+	if !(bytes.Compare(ip.To16(), entry.ipLow.To16()) >= 0 &&
+		bytes.Compare(ip.To16(), entry.ipHigh.To16()) <= 0) {
 		return "", fmt.Errorf("IP address not found in table")
 	}
 
