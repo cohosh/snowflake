@@ -12,7 +12,7 @@ Recognized line formats for IPv4 are:
     INTIPLOW,INTIPHIGH,CC
         and
     "INTIPLOW","INTIPHIGH","CC","CC3","COUNTRY NAME"
-        where INTIPLOW and INTIPHIGH are IPv4 addresses encoded as 4-byte unsigned
+        where INTIPLOW and INTIPHIGH are IPv4 addresses encoded as big-endian 4-byte unsigned
         integers, and CC is a country code.
 
 Recognized line format for IPv6 is:
@@ -87,7 +87,7 @@ func (table *GeoIPv6Table) Lock() { (*table).lock.Lock() }
 func (table *GeoIPv4Table) Unlock() { (*table).lock.Unlock() }
 func (table *GeoIPv6Table) Unlock() { (*table).lock.Unlock() }
 
-// Convert a geoip IP address represented as unsigned integer to net.IP
+// Convert a geoip IP address represented as a big-endian unsigned integer to net.IP
 func geoipStringToIP(ipStr string) (net.IP, error) {
 	ip, err := strconv.ParseUint(ipStr, 10, 32)
 	if err != nil {
