@@ -211,7 +211,7 @@ func GeoIPLoadFile(table GeoIPTable, pathname string) error {
 //Determines whether the given IP address (key) is included in or less
 //than the IP range of the Geoip entry.
 //Outputs 0 if key is greater than the entry's IP range and 1 otherwise
-func GeoIPRangeClosure(key net.IP, entry GeoIPEntry) bool {
+func GeoIPRangeSearch(key net.IP, entry GeoIPEntry) bool {
 	a := key.To16()
 	b := entry.ipHigh.To16()
 
@@ -248,7 +248,7 @@ func GetCountryByAddr(table GeoIPTable, addr string) (string, error) {
 
 	//look IP up in database
 	index := sort.Search(table.Len(), func(i int) bool {
-		return GeoIPRangeClosure(ip, table.ElementAt(i))
+		return GeoIPRangeSearch(ip, table.ElementAt(i))
 	})
 
 	if index == table.Len() {
