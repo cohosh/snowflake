@@ -50,7 +50,7 @@ func (m *Metrics) UpdateCountryStats(addr string) error {
 
 	//update map of countries and counts
 	if country != "" {
-		m.countryStats.counts[country] = m.countryStats.counts[country] + 1
+		m.countryStats.counts[country]++
 	}
 
 	return nil
@@ -100,8 +100,7 @@ func NewMetrics() (*Metrics, error) {
 	// Write to log file every hour with updated metrics
 	heartbeat := time.Tick(time.Hour)
 	go func() {
-		for {
-			<-heartbeat
+		for range heartbeat {
 			metricsLogger.Println("Country stats: ", m.countryStats.Display())
 
 			//restore all metrics to original values
