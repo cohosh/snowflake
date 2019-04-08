@@ -6,7 +6,12 @@ import (
 	"log"
 	"net"
 	"os"
+	"sync"
 	"time"
+)
+
+var (
+	once sync.Once
 )
 
 type CountryStats struct {
@@ -98,8 +103,8 @@ func NewMetrics() (*Metrics, error) {
 	}
 
 	// Write to log file every hour with updated metrics
-	heartbeat := time.Tick(time.Hour)
-	go func() {
+	go once.Do(func() {
+		heartbeat := time.Tick(time.Hour)
 		for range heartbeat {
 			metricsLogger.Println("Country stats: ", m.countryStats.Display())
 
@@ -107,7 +112,7 @@ func NewMetrics() (*Metrics, error) {
 			m.countryStats.counts = make(map[string]int)
 
 		}
-	}()
+	})
 
 	return m, nil
 }
