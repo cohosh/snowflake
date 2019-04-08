@@ -27,7 +27,10 @@ package main
 
 import (
 	"bufio"
+	"crypto/sha1"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"os"
@@ -163,6 +166,8 @@ func GeoIPLoadFile(table GeoIPTable, pathname string) error {
 	}
 	defer geoipFile.Close()
 
+	hash := sha1.New()
+
 	table.Lock()
 	defer table.Unlock()
 
@@ -174,8 +179,15 @@ func GeoIPLoadFile(table GeoIPTable, pathname string) error {
 			log.Println("Error: " + err.Error())
 			return err
 		}
+
+		_, err = io.WriteString(hash, scanner.Text())
+		if err != nil {
+			return err
+		}
 	}
 
+	sha1Hash := hex.EncodeToString(hash.Sum(nil))
+	log.Println("Using geoip file ", pathname, " with checksum", sha1Hash)
 	log.Println("Loaded ", table.Len(), " entries into table")
 
 	return nil
