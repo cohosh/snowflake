@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"container/heap"
+	"fmt"
 	. "github.com/smartystreets/goconvey/convey"
 	"net/http"
 	"net/http/httptest"
@@ -278,15 +279,31 @@ func TestGeoip(t *testing.T) {
 		err = GeoIPLoadFile(tv6, "/usr/share/tor/geoip6")
 		So(err, ShouldEqual, nil)
 
-		So(GetCountryByAddr(tv4, "129.97.208.23"), ShouldEqual, "CA") //University of Waterloo
-		So(GetCountryByAddr(tv4, "127.0.0.1"), ShouldEqual, "")
-		So(GetCountryByAddr(tv4, "0.0.0.0"), ShouldEqual, "")
-		So(GetCountryByAddr(tv4, "255.255.255.255"), ShouldEqual, "")
+		country, err := GetCountryByAddr(tv4, "129.97.208.23") //University of Waterloo
+		So(country, ShouldEqual, "CA")
+		So(err, ShouldEqual, nil)
+		country, err = GetCountryByAddr(tv4, "127.0.0.1")
+		So(country, ShouldEqual, "")
+		So(err, ShouldResemble, fmt.Errorf("IP address not found in table"))
+		country, err = GetCountryByAddr(tv4, "0.0.0.0")
+		So(country, ShouldEqual, "")
+		So(err, ShouldResemble, fmt.Errorf("IP address not found in table"))
+		country, err = GetCountryByAddr(tv4, "255.255.255.255")
+		So(country, ShouldEqual, "")
+		So(err, ShouldResemble, fmt.Errorf("IP address not found in table"))
 
-		So(GetCountryByAddr(tv6, "2620:101:f000:0:250:56ff:fe80:168e"), ShouldEqual, "CA")
-		So(GetCountryByAddr(tv6, "fd00:0:0:0:0:0:0:1"), ShouldEqual, "")
-		So(GetCountryByAddr(tv6, "0:0:0:0:0:0:0:0"), ShouldEqual, "")
-		So(GetCountryByAddr(tv6, "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"), ShouldEqual, "")
+		country, err = GetCountryByAddr(tv6, "2620:101:f000:0:250:56ff:fe80:168e")
+		So(country, ShouldEqual, "CA")
+		So(err, ShouldEqual, nil)
+		country, err = GetCountryByAddr(tv6, "fd00:0:0:0:0:0:0:1")
+		So(country, ShouldEqual, "")
+		So(err, ShouldResemble, fmt.Errorf("IP address not found in table"))
+		country, err = GetCountryByAddr(tv6, "0:0:0:0:0:0:0:0")
+		So(country, ShouldEqual, "")
+		So(err, ShouldResemble, fmt.Errorf("IP address not found in table"))
+		country, err = GetCountryByAddr(tv6, "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff")
+		So(country, ShouldEqual, "")
+		So(err, ShouldResemble, fmt.Errorf("IP address not found in table"))
 
 		// Make sure things behave properly if geoip file fails to load
 		ctx := NewBrokerContext()

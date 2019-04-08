@@ -41,8 +41,9 @@ import (
 )
 
 type GeoIPTable interface {
-	parseEntry(string) error
+	parseEntry(string) (*GeoIPEntry, error)
 	Len() int
+	Append(GeoIPEntry)
 	ElementAt(int) GeoIPEntry
 	Lock()
 	Unlock()
@@ -66,16 +67,15 @@ type GeoIPv6Table struct {
 	lock sync.Mutex // synchronization for geoip table accesses and reloads
 }
 
-type GeoipError struct {
-	problem string
-}
-
-func (e *GeoipError) Error() string {
-	return e.problem
-}
-
 func (table GeoIPv4Table) Len() int { return len(table.table) }
 func (table GeoIPv6Table) Len() int { return len(table.table) }
+
+func (table *GeoIPv4Table) Append(entry GeoIPEntry) {
+	(*table).table = append(table.table, entry)
+}
+func (table *GeoIPv6Table) Append(entry GeoIPEntry) {
+	(*table).table = append(table.table, entry)
+}
 
 func (table GeoIPv4Table) ElementAt(i int) GeoIPEntry { return table.table[i] }
 func (table GeoIPv6Table) ElementAt(i int) GeoIPEntry { return table.table[i] }
@@ -87,11 +87,10 @@ func (table *GeoIPv4Table) Unlock() { (*table).lock.Unlock() }
 func (table *GeoIPv6Table) Unlock() { (*table).lock.Unlock() }
 
 // Convert a geoip IP address represented as unsigned integer to net.IP
-func geoipStringToIP(ipStr string) net.IP {
+func geoipStringToIP(ipStr string) (net.IP, error) {
 	ip, err := strconv.ParseUint(ipStr, 10, 32)
 	if err != nil {
-		log.Println("error parsing IP ", ipStr)
-		return net.IPv4(0, 0, 0, 0)
+		return net.IPv4(0, 0, 0, 0), fmt.Errorf("Error parsing IP %s", ipStr)
 	}
 	var bytes [4]byte
 	bytes[0] = byte(ip & 0xFF)
@@ -99,60 +98,71 @@ func geoipStringToIP(ipStr string) net.IP {
 	bytes[2] = byte((ip >> 16) & 0xFF)
 	bytes[3] = byte((ip >> 24) & 0xFF)
 
-	return net.IPv4(bytes[3], bytes[2], bytes[1], bytes[0])
+	return net.IPv4(bytes[3], bytes[2], bytes[1], bytes[0]), nil
 }
 
 //Parses a line in the provided geoip file that corresponds
 //to an address range and a two character country code
-func (table *GeoIPv4Table) parseEntry(candidate string) error {
+func (table *GeoIPv4Table) parseEntry(candidate string) (*GeoIPEntry, error) {
 
 	if candidate[0] == '#' {
-		return nil
+		return nil, nil
 	}
 
 	parsedCandidate := strings.Split(candidate, ",")
 
 	if len(parsedCandidate) != 3 {
-		log.Println("Received strings", parsedCandidate)
-		return &GeoipError{
-			problem: "Provided geoip file is incorrectly formatted",
-		}
+		return nil, fmt.Errorf("Provided geoip file is incorrectly formatted. Could not parse line:\n%s", parsedCandidate)
 	}
 
-	geoipEntry := GeoIPEntry{
-		ipLow:   geoipStringToIP(parsedCandidate[0]),
-		ipHigh:  geoipStringToIP(parsedCandidate[1]),
+	low, err := geoipStringToIP(parsedCandidate[0])
+	if err != nil {
+		return nil, err
+	}
+	high, err := geoipStringToIP(parsedCandidate[1])
+	if err != nil {
+		return nil, err
+	}
+
+	geoipEntry := &GeoIPEntry{
+		ipLow:   low,
+		ipHigh:  high,
 		country: parsedCandidate[2],
 	}
 
-	(*table).table = append((*table).table, geoipEntry)
-	return nil
+	return geoipEntry, nil
 }
 
 //Parses a line in the provided geoip file that corresponds
 //to an address range and a two character country code
-func (table *GeoIPv6Table) parseEntry(candidate string) error {
+func (table *GeoIPv6Table) parseEntry(candidate string) (*GeoIPEntry, error) {
 
 	if candidate[0] == '#' {
-		return nil
+		return nil, nil
 	}
 
 	parsedCandidate := strings.Split(candidate, ",")
 
 	if len(parsedCandidate) != 3 {
-		return &GeoipError{
-			problem: "Provided geoip file is incorrectly formatted",
-		}
+		return nil, fmt.Errorf("Provided geoip file is incorrectly formatted. Could not parse line:\n%s", parsedCandidate)
 	}
 
-	geoipEntry := GeoIPEntry{
-		ipLow:   net.ParseIP(parsedCandidate[0]),
-		ipHigh:  net.ParseIP(parsedCandidate[1]),
+	low := net.ParseIP(parsedCandidate[0])
+	if low == nil {
+		return nil, fmt.Errorf("Provided geoip file is incorrectly formatted. Couldn't parse IP %s", parsedCandidate[0])
+	}
+	high := net.ParseIP(parsedCandidate[1])
+	if high == nil {
+		return nil, fmt.Errorf("Provided geoip file is incorrectly formatted. Couldn't parse IP %s", parsedCandidate[1])
+	}
+
+	geoipEntry := &GeoIPEntry{
+		ipLow:   low,
+		ipHigh:  high,
 		country: parsedCandidate[2],
 	}
 
-	(*table).table = append((*table).table, geoipEntry)
-	return nil
+	return geoipEntry, nil
 }
 
 //Loads provided geoip file into our tables
@@ -161,7 +171,6 @@ func GeoIPLoadFile(table GeoIPTable, pathname string) error {
 	//open file
 	geoipFile, err := os.Open(pathname)
 	if err != nil {
-		log.Println("Error: " + err.Error())
 		return err
 	}
 	defer geoipFile.Close()
@@ -174,16 +183,22 @@ func GeoIPLoadFile(table GeoIPTable, pathname string) error {
 	//read in strings and call parse function
 	scanner := bufio.NewScanner(geoipFile)
 	for scanner.Scan() {
-		err = table.parseEntry(scanner.Text())
+		entry, err := table.parseEntry(scanner.Text())
 		if err != nil {
-			log.Println("Error: " + err.Error())
 			return err
+		}
+
+		if entry != nil {
+			table.Append(*entry)
 		}
 
 		_, err = io.WriteString(hash, scanner.Text())
 		if err != nil {
 			return err
 		}
+	}
+	if err := scanner.Err(); err != nil {
+		return err
 	}
 
 	sha1Hash := hex.EncodeToString(hash.Sum(nil))
@@ -237,14 +252,14 @@ func GetCountryByAddr(table GeoIPTable, addr string) (string, error) {
 	})
 
 	if index == table.Len() {
-		return "", fmt.Errorf("IP address lookup failed")
+		return "", fmt.Errorf("IP address not found in table")
 	}
 
 	// check to see if addr is in the range specified by the returned index
 	// search on IPs in invalid ranges (e.g., 127.0.0.0/8) will return the
 	//country code of the next highest range
 	if !GeoIPCheckRange(ip, table.ElementAt(index)) {
-		return "", nil
+		return "", fmt.Errorf("IP address not found in table")
 	}
 
 	return table.ElementAt(index).country, nil

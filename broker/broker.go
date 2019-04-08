@@ -39,11 +39,17 @@ type BrokerContext struct {
 func NewBrokerContext() *BrokerContext {
 	snowflakes := new(SnowflakeHeap)
 	heap.Init(snowflakes)
+	metrics, err := NewMetrics()
+
+	if err != nil {
+		panic(err.Error())
+	}
+
 	return &BrokerContext{
 		snowflakes:    snowflakes,
 		idToSnowflake: make(map[string]*Snowflake),
 		proxyPolls:    make(chan *ProxyPoll),
-		metrics:       NewMetrics(),
+		metrics:       metrics,
 	}
 }
 

@@ -65,7 +65,7 @@ func (m *Metrics) LoadGeoipDatabases(geoipDB string, geoip6DB string) error {
 	err := GeoIPLoadFile(tablev4, geoipDB)
 	if err != nil {
 		m.tablev4 = nil
-		return fmt.Errorf("Failed to load geoip database ")
+		return err
 	} else {
 		m.tablev4 = tablev4
 	}
@@ -74,7 +74,7 @@ func (m *Metrics) LoadGeoipDatabases(geoipDB string, geoip6DB string) error {
 	err = GeoIPLoadFile(tablev6, geoip6DB)
 	if err != nil {
 		m.tablev6 = nil
-		return fmt.Errorf("Failed to load geoip6 database ")
+		return err
 	} else {
 		m.tablev6 = tablev6
 	}
@@ -82,14 +82,13 @@ func (m *Metrics) LoadGeoipDatabases(geoipDB string, geoip6DB string) error {
 	return nil
 }
 
-func NewMetrics() *Metrics {
+func NewMetrics() (*Metrics, error) {
 	m := new(Metrics)
 
 	f, err := os.OpenFile("metrics.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 
 	if err != nil {
-		log.Println("Couldn't open file for metrics logging")
-		return nil
+		return nil, err
 	}
 
 	metricsLogger := log.New(f, "", log.LstdFlags|log.LUTC)
@@ -111,5 +110,5 @@ func NewMetrics() *Metrics {
 		}
 	}()
 
-	return m
+	return m, nil
 }
