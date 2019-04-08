@@ -5,6 +5,7 @@ import (
 	"container/heap"
 	"fmt"
 	. "github.com/smartystreets/goconvey/convey"
+        "net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -279,29 +280,29 @@ func TestGeoip(t *testing.T) {
 		err = GeoIPLoadFile(tv6, "/usr/share/tor/geoip6")
 		So(err, ShouldEqual, nil)
 
-		country, err := GetCountryByAddr(tv4, "129.97.208.23") //University of Waterloo
+		country, err := GetCountryByAddr(tv4, net.ParseIP("129.97.208.23")) //University of Waterloo
 		So(country, ShouldEqual, "CA")
 		So(err, ShouldEqual, nil)
-		country, err = GetCountryByAddr(tv4, "127.0.0.1")
+		country, err = GetCountryByAddr(tv4, net.ParseIP("127.0.0.1"))
 		So(country, ShouldEqual, "")
 		So(err, ShouldResemble, fmt.Errorf("IP address not found in table"))
-		country, err = GetCountryByAddr(tv4, "0.0.0.0")
+		country, err = GetCountryByAddr(tv4, net.ParseIP("0.0.0.0"))
 		So(country, ShouldEqual, "")
 		So(err, ShouldResemble, fmt.Errorf("IP address not found in table"))
-		country, err = GetCountryByAddr(tv4, "255.255.255.255")
+		country, err = GetCountryByAddr(tv4, net.ParseIP("255.255.255.255"))
 		So(country, ShouldEqual, "")
 		So(err, ShouldResemble, fmt.Errorf("IP address not found in table"))
 
-		country, err = GetCountryByAddr(tv6, "2620:101:f000:0:250:56ff:fe80:168e")
+		country, err = GetCountryByAddr(tv6, net.ParseIP("2620:101:f000:0:250:56ff:fe80:168e"))
 		So(country, ShouldEqual, "CA")
 		So(err, ShouldEqual, nil)
-		country, err = GetCountryByAddr(tv6, "fd00:0:0:0:0:0:0:1")
+		country, err = GetCountryByAddr(tv6, net.ParseIP("fd00:0:0:0:0:0:0:1"))
 		So(country, ShouldEqual, "")
 		So(err, ShouldResemble, fmt.Errorf("IP address not found in table"))
-		country, err = GetCountryByAddr(tv6, "0:0:0:0:0:0:0:0")
+		country, err = GetCountryByAddr(tv6, net.ParseIP("0:0:0:0:0:0:0:0"))
 		So(country, ShouldEqual, "")
 		So(err, ShouldResemble, fmt.Errorf("IP address not found in table"))
-		country, err = GetCountryByAddr(tv6, "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff")
+		country, err = GetCountryByAddr(tv6, net.ParseIP("ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"))
 		So(country, ShouldEqual, "")
 		So(err, ShouldResemble, fmt.Errorf("IP address not found in table"))
 

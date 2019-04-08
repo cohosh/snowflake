@@ -36,17 +36,18 @@ func (m *Metrics) UpdateCountryStats(addr string) error {
 	var country string
 	var err error
 
-	if net.ParseIP(addr).To4() != nil {
+        ip := net.ParseIP(addr)
+	if ip.To4() != nil {
 		//This is an IPv4 address
 		if m.tablev4 == nil {
 			return nil
 		}
-		country, err = GetCountryByAddr(m.tablev4, addr)
+		country, err = GetCountryByAddr(m.tablev4, ip)
 	} else {
 		if m.tablev6 == nil {
 			return nil
 		}
-		country, err = GetCountryByAddr(m.tablev6, addr)
+		country, err = GetCountryByAddr(m.tablev6, ip)
 	}
 
 	if err != nil {

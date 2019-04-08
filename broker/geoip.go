@@ -210,9 +210,7 @@ func GeoIPLoadFile(table GeoIPTable, pathname string) error {
 }
 
 //Returns the country location of an IPv4 or IPv6 address.
-func GetCountryByAddr(table GeoIPTable, addr string) (string, error) {
-	//translate addr string to IP
-	ip := net.ParseIP(addr)
+func GetCountryByAddr(table GeoIPTable, ip net.IP) (string, error) {
 
 	table.Lock()
 	defer table.Unlock()

@@ -45,6 +45,10 @@ func NewBrokerContext() *BrokerContext {
 		panic(err.Error())
 	}
 
+        if metrics == nil {
+            panic("Failed to create metrics")
+        }
+
 	return &BrokerContext{
 		snowflakes:    snowflakes,
 		idToSnowflake: make(map[string]*Snowflake),
