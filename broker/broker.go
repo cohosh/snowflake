@@ -169,7 +169,6 @@ func clientOffers(ctx *BrokerContext, w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-
 	// Immediately fail if there are no snowflakes available.
 	if ctx.snowflakes.Len() <= 0 {
 		log.Println("Client: No snowflake proxies available.")

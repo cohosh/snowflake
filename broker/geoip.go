@@ -221,8 +221,6 @@ func GetCountryByAddr(table GeoIPTable, ip net.IP) (string, error) {
 		return (bytes.Compare(ip.To16(), entry.ipHigh.To16()) <= 0)
 	})
 
-	log.Println("Returned index ", index)
-
 	if index == table.Len() {
 		return "", fmt.Errorf("IP address not found in table")
 	}
