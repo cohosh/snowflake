@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"container/heap"
-	"fmt"
 	. "github.com/smartystreets/goconvey/convey"
 	"net"
 	"net/http"
@@ -283,103 +282,92 @@ func TestGeoip(t *testing.T) {
 		Convey("IPv4 Country Mapping Tests", func() {
 			for _, test := range []struct {
 				addr, cc string
-				msg      error
+				ok       bool
 			}{
 				{
 					"129.97.208.23", //uwaterloo
 					"CA",
-					nil,
+					true,
 				},
 				{
 					"127.0.0.1",
 					"",
-					fmt.Errorf("IP address not found in table"),
+					false,
 				},
 				{
 					"255.255.255.255",
 					"",
-					fmt.Errorf("IP address not found in table"),
+					false,
 				},
 				{
 					"0.0.0.0",
 					"",
-					fmt.Errorf("IP address not found in table"),
+					false,
 				},
 				{
 					"223.252.127.255", //test high end of range
 					"JP",
-					nil,
+					true,
 				},
 				{
 					"223.252.127.255", //test low end of range
 					"JP",
-					nil,
+					true,
 				},
 			} {
-				country, err := GetCountryByAddr(tv4, net.ParseIP(test.addr))
+				country, ok := GetCountryByAddr(tv4, net.ParseIP(test.addr))
 				So(country, ShouldEqual, test.cc)
-				So(err, ShouldResemble, test.msg)
+				So(ok, ShouldResemble, test.ok)
 			}
 		})
 
 		Convey("IPv6 Country Mapping Tests", func() {
 			for _, test := range []struct {
 				addr, cc string
-				msg      error
+				ok       bool
 			}{
 				{
 					"2620:101:f000:0:250:56ff:fe80:168e", //uwaterloo
 					"CA",
-					nil,
+					true,
 				},
 				{
 					"fd00:0:0:0:0:0:0:1",
 					"",
-					fmt.Errorf("IP address not found in table"),
+					false,
 				},
 				{
 					"0:0:0:0:0:0:0:0",
 					"",
-					fmt.Errorf("IP address not found in table"),
+					false,
 				},
 				{
 					"ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
 					"",
-					fmt.Errorf("IP address not found in table"),
+					false,
 				},
 				{
 					"2a07:2e47:ffff:ffff:ffff:ffff:ffff:ffff", //test high end of range
 					"FR",
-					nil,
+					true,
 				},
 				{
 					"2a07:2e40::", //test low end of range
 					"FR",
-					nil,
+					true,
 				},
 			} {
-				country, err := GetCountryByAddr(tv6, net.ParseIP(test.addr))
+				country, ok := GetCountryByAddr(tv6, net.ParseIP(test.addr))
 				So(country, ShouldEqual, test.cc)
-				So(err, ShouldResemble, test.msg)
+				So(ok, ShouldResemble, test.ok)
 			}
 		})
 
 		// Make sure things behave properly if geoip file fails to load
 		ctx := NewBrokerContext()
-		err = ctx.metrics.LoadGeoipDatabases("invalid_filename", "invalid_filename6")
-		So(err, ShouldNotEqual, nil)
-		err = ctx.metrics.UpdateCountryStats("127.0.0.1")
-		So(err, ShouldEqual, nil)
+		ctx.metrics.LoadGeoipDatabases("invalid_filename", "invalid_filename6")
+		ctx.metrics.UpdateCountryStats("127.0.0.1")
 		So(ctx.metrics.tablev4, ShouldEqual, nil)
-
-		err = ctx.metrics.LoadGeoipDatabases("test_geoip", "test_geoip6")
-		So(err, ShouldEqual, nil)
-
-		//Make sure UpdateCountryStats throws error correctly
-		err = ctx.metrics.UpdateCountryStats("2a07:2e40::")
-		So(err, ShouldEqual, nil)
-		err = ctx.metrics.UpdateCountryStats("invalid ip")
-		So(err, ShouldNotEqual, nil)
 
 	})
 }

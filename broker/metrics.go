@@ -31,27 +31,28 @@ func (s CountryStats) Display() string {
 	return fmt.Sprintln(s.counts)
 }
 
-func (m *Metrics) UpdateCountryStats(addr string) error {
+func (m *Metrics) UpdateCountryStats(addr string) {
 
 	var country string
-	var err error
+	var ok bool
 
-        ip := net.ParseIP(addr)
+	ip := net.ParseIP(addr)
 	if ip.To4() != nil {
 		//This is an IPv4 address
 		if m.tablev4 == nil {
-			return nil
+			return
 		}
-		country, err = GetCountryByAddr(m.tablev4, ip)
+		country, ok = GetCountryByAddr(m.tablev4, ip)
 	} else {
 		if m.tablev6 == nil {
-			return nil
+			return
 		}
-		country, err = GetCountryByAddr(m.tablev6, ip)
+		country, ok = GetCountryByAddr(m.tablev6, ip)
 	}
 
-	if err != nil {
-		return err
+	if !ok {
+		country = "??"
+		log.Println("Unknown geoip")
 	}
 
 	//update map of countries and counts
@@ -59,8 +60,7 @@ func (m *Metrics) UpdateCountryStats(addr string) error {
 		m.countryStats.counts[country]++
 	}
 
-	return nil
-
+	return
 }
 
 func (m *Metrics) LoadGeoipDatabases(geoipDB string, geoip6DB string) error {

@@ -8,12 +8,14 @@ geoip database
 
 The tables used for geoip data must be structured as follows:
 
-Recognized line formats for IPv4 are:
+Recognized line format for IPv4 is:
     INTIPLOW,INTIPHIGH,CC
-        and
-    "INTIPLOW","INTIPHIGH","CC","CC3","COUNTRY NAME"
         where INTIPLOW and INTIPHIGH are IPv4 addresses encoded as big-endian 4-byte unsigned
         integers, and CC is a country code.
+
+Note that the IPv4 line format
+    "INTIPLOW","INTIPHIGH","CC","CC3","COUNTRY NAME"
+is not currently supported.
 
 Recognized line format for IPv6 is:
     IPV6LOW,IPV6HIGH,CC
@@ -145,16 +147,16 @@ func (table *GeoIPv6Table) parseEntry(candidate string) (*GeoIPEntry, error) {
 	parsedCandidate := strings.Split(candidate, ",")
 
 	if len(parsedCandidate) != 3 {
-		return nil, fmt.Errorf("Provided geoip file is incorrectly formatted. Could not parse line:\n%s", parsedCandidate)
+		return nil, fmt.Errorf("")
 	}
 
 	low := net.ParseIP(parsedCandidate[0])
 	if low == nil {
-		return nil, fmt.Errorf("Provided geoip file is incorrectly formatted. Couldn't parse IP %s", parsedCandidate[0])
+		return nil, fmt.Errorf("")
 	}
 	high := net.ParseIP(parsedCandidate[1])
 	if high == nil {
-		return nil, fmt.Errorf("Provided geoip file is incorrectly formatted. Couldn't parse IP %s", parsedCandidate[1])
+		return nil, fmt.Errorf("")
 	}
 
 	geoipEntry := &GeoIPEntry{
@@ -181,22 +183,20 @@ func GeoIPLoadFile(table GeoIPTable, pathname string) error {
 	table.Lock()
 	defer table.Unlock()
 
+	hashedFile := io.TeeReader(geoipFile, hash)
+
 	//read in strings and call parse function
-	scanner := bufio.NewScanner(geoipFile)
+	scanner := bufio.NewScanner(hashedFile)
 	for scanner.Scan() {
 		entry, err := table.parseEntry(scanner.Text())
 		if err != nil {
-			return err
+			return fmt.Errorf("Provided geoip file is incorrectly formatted. Line is: %+q", scanner.Text())
 		}
 
 		if entry != nil {
 			table.Append(*entry)
 		}
 
-		_, err = io.WriteString(hash, scanner.Text())
-		if err != nil {
-			return err
-		}
 	}
 	if err := scanner.Err(); err != nil {
 		return err
@@ -210,7 +210,7 @@ func GeoIPLoadFile(table GeoIPTable, pathname string) error {
 }
 
 //Returns the country location of an IPv4 or IPv6 address.
-func GetCountryByAddr(table GeoIPTable, ip net.IP) (string, error) {
+func GetCountryByAddr(table GeoIPTable, ip net.IP) (string, bool) {
 
 	table.Lock()
 	defer table.Unlock()
@@ -222,7 +222,7 @@ func GetCountryByAddr(table GeoIPTable, ip net.IP) (string, error) {
 	})
 
 	if index == table.Len() {
-		return "", fmt.Errorf("IP address not found in table")
+		return "", false
 	}
 
 	// check to see if addr is in the range specified by the returned index
@@ -231,9 +231,9 @@ func GetCountryByAddr(table GeoIPTable, ip net.IP) (string, error) {
 	entry := table.ElementAt(index)
 	if !(bytes.Compare(ip.To16(), entry.ipLow.To16()) >= 0 &&
 		bytes.Compare(ip.To16(), entry.ipHigh.To16()) <= 0) {
-		return "", fmt.Errorf("IP address not found in table")
+		return "", false
 	}
 
-	return table.ElementAt(index).country, nil
+	return table.ElementAt(index).country, true
 
 }

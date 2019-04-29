@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -45,9 +46,9 @@ func NewBrokerContext() *BrokerContext {
 		panic(err.Error())
 	}
 
-        if metrics == nil {
-            panic("Failed to create metrics")
-        }
+	if metrics == nil {
+		panic("Failed to create metrics")
+	}
 
 	return &BrokerContext{
 		snowflakes:    snowflakes,
@@ -218,9 +219,12 @@ func proxyAnswers(ctx *BrokerContext, w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get proxy country stats
-	err = ctx.metrics.UpdateCountryStats(strings.Split(r.RemoteAddr, ":")[0])
+	remoteIP, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
-		log.Println("Error updating country stats: ", err.Error())
+		log.Println("Error processing proxy IP: ", err.Error())
+	} else {
+
+		ctx.metrics.UpdateCountryStats(remoteIP)
 	}
 
 	log.Println("Received answer: ", body)
@@ -267,7 +271,7 @@ func main() {
 	if !disableGeoip {
 		err := ctx.metrics.LoadGeoipDatabases(geoipDatabase, geoip6Database)
 		if err != nil {
-			panic(err.Error())
+			log.Fatal(err.Error())
 		}
 	}
 
