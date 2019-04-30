@@ -61,7 +61,7 @@ func TestBroker(t *testing.T) {
 			Convey("with 503 when no snowflakes are available.", func() {
 				clientOffers(ctx, w, r)
 				So(w.Code, ShouldEqual, http.StatusServiceUnavailable)
-				So(w.Body.String(), ShouldEqual, "")
+				So(w.Body.String(), ShouldEqual, "\n")
 			})
 
 			Convey("with a proxy answer if available.", func() {
@@ -130,7 +130,7 @@ func TestBroker(t *testing.T) {
 				// nil means timeout
 				p.offerChannel <- nil
 				<-done
-				So(w.Body.String(), ShouldEqual, "")
+				So(w.Body.String(), ShouldEqual, "\n")
 				So(w.Code, ShouldEqual, http.StatusGatewayTimeout)
 			})
 		})
@@ -168,6 +168,16 @@ func TestBroker(t *testing.T) {
 				proxyAnswers(ctx, w, r)
 				So(w.Code, ShouldEqual, http.StatusBadRequest)
 			})
+
+			Convey("with error if the proxy writes too much data", func() {
+				data := bytes.NewReader(make([]byte, 100001, 100001))
+				r, err := http.NewRequest("POST", "snowflake.broker/answer", data)
+				r.Header.Set("X-Session-ID", "test")
+				So(err, ShouldBeNil)
+				proxyAnswers(ctx, w, r)
+				So(w.Code, ShouldEqual, http.StatusBadRequest)
+			})
+
 		})
 	})
 
