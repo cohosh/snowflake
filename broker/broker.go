@@ -123,15 +123,15 @@ For snowflake proxies to request a client from the Broker.
 */
 func proxyPolls(ctx *BrokerContext, w http.ResponseWriter, r *http.Request) {
 	id := r.Header.Get("X-Session-ID")
-	body, err := ioutil.ReadAll(r.Body)
+	body, err := ioutil.ReadAll(http.MaxBytesReader(w, r.Body, 100000))
 	if nil != err {
 		log.Println("Invalid data.")
-		w.WriteHeader(http.StatusBadRequest)
+		http.Error(w, "", http.StatusBadRequest)
 		return
 	}
 	if string(body) != id {
 		log.Println("Mismatched IDs!")
-		w.WriteHeader(http.StatusBadRequest)
+		http.Error(w, "", http.StatusBadRequest)
 		return
 	}
 	log.Println("Received snowflake: ", id)
@@ -139,7 +139,7 @@ func proxyPolls(ctx *BrokerContext, w http.ResponseWriter, r *http.Request) {
 	offer := ctx.RequestOffer(id)
 	if nil == offer {
 		log.Println("Proxy " + id + " did not receive a Client offer.")
-		w.WriteHeader(http.StatusGatewayTimeout)
+		http.Error(w, "", http.StatusGatewayTimeout)
 		return
 	}
 	log.Println("Passing client offer to snowflake.")
@@ -153,16 +153,16 @@ the HTTP response back to the client.
 */
 func clientOffers(ctx *BrokerContext, w http.ResponseWriter, r *http.Request) {
 	startTime := time.Now()
-	offer, err := ioutil.ReadAll(r.Body)
+	offer, err := ioutil.ReadAll(http.MaxBytesReader(w, r.Body, 100000))
 	if nil != err {
 		log.Println("Invalid data.")
-		w.WriteHeader(http.StatusBadRequest)
+		http.Error(w, "", http.StatusBadRequest)
 		return
 	}
 	// Immediately fail if there are no snowflakes available.
 	if ctx.snowflakes.Len() <= 0 {
 		log.Println("Client: No snowflake proxies available.")
-		w.WriteHeader(http.StatusServiceUnavailable)
+		http.Error(w, "", http.StatusBadRequest)
 		return
 	}
 	// Otherwise, find the most available snowflake proxy, and pass the offer to it.
@@ -181,8 +181,7 @@ func clientOffers(ctx *BrokerContext, w http.ResponseWriter, r *http.Request) {
 			time.Millisecond
 	case <-time.After(time.Second * ClientTimeout):
 		log.Println("Client: Timed out.")
-		w.WriteHeader(http.StatusGatewayTimeout)
-		w.Write([]byte("timed out waiting for answer!"))
+		http.Error(w, "timed out waiting for answer!", http.StatusGatewayTimeout)
 	}
 }
 
@@ -197,13 +196,13 @@ func proxyAnswers(ctx *BrokerContext, w http.ResponseWriter, r *http.Request) {
 	if !ok || nil == snowflake {
 		// The snowflake took too long to respond with an answer, so its client
 		// disappeared / the snowflake is no longer recognized by the Broker.
-		w.WriteHeader(http.StatusGone)
+		http.Error(w, "", http.StatusGone)
 		return
 	}
-	body, err := ioutil.ReadAll(r.Body)
+	body, err := ioutil.ReadAll(http.MaxBytesReader(w, r.Body, 100000))
 	if nil != err || nil == body || len(body) <= 0 {
 		log.Println("Invalid data.")
-		w.WriteHeader(http.StatusBadRequest)
+		http.Error(w, "", http.StatusBadRequest)
 		return
 	}
 	log.Println("Received answer.")
