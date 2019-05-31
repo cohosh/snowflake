@@ -22,6 +22,7 @@ import (
 
 	"git.torproject.org/pluggable-transports/goptlib.git"
 	"git.torproject.org/pluggable-transports/snowflake.git/common/safelog"
+	"git.torproject.org/pluggable-transports/snowflake.git/common/snowflake-proto"
 	"git.torproject.org/pluggable-transports/websocket.git/websocket"
 	"golang.org/x/crypto/acme/autocert"
 	"golang.org/x/net/http2"
@@ -108,7 +109,7 @@ func newWebSocketConn(ws *websocket.WebSocket) webSocketConn {
 }
 
 // Copy from WebSocket to socket and vice versa.
-func proxy(local *net.TCPConn, conn *webSocketConn) {
+func proxy(local *net.TCPConn, conn io.ReadWriteCloser) {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
@@ -175,7 +176,9 @@ func webSocketHandler(ws *websocket.WebSocket) {
 	}
 	defer or.Close()
 
-	proxy(or, &conn)
+	sConn := &proto.SnowflakeReadWriter{Conn: &conn}
+
+	proxy(or, sConn)
 }
 
 func initServer(addr *net.TCPAddr,
