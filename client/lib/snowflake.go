@@ -6,6 +6,8 @@ import (
 	"log"
 	"net"
 	"sync"
+
+	"git.torproject.org/pluggable-transports/snowflake.git/common/snowflake-proto"
 )
 
 const (
@@ -44,9 +46,12 @@ func Handler(socks SocksConnector, snowflakes SnowflakeCollector) error {
 		socks.Close()
 	}()
 
+	// Use our snowflake protocol
+	sConn := &proto.SnowflakeReadWriter{Conn: snowflake}
+
 	// Begin exchanging data. Either WebRTC or localhost SOCKS will close first.
 	// In eithercase, this closes the handler and induces a new handler.
-	copyLoop(socks, snowflake)
+	copyLoop(socks, sConn)
 	log.Println("---- Handler: closed ---")
 	return nil
 }
