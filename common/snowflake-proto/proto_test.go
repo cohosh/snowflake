@@ -58,6 +58,11 @@ func TestSnowflakeProto(t *testing.T) {
 			So(s.seq, ShouldEqual, 5)
 			So(s.ack, ShouldEqual, 5)
 
+			// Check that acknowledgement packet was written
+			n, err = s.Read(received)
+			So(err, ShouldEqual, nil)
+			So(n, ShouldEqual, 0)
+
 		})
 
 		Convey("Partial reads work correctly", func() {

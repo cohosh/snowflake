@@ -13,7 +13,7 @@ const snowflakeHeaderLen = 12
 type snowflakeHeader struct {
 	seq    int
 	ack    int
-	length int //length of the accompanying data (not including header length)
+	length int //length of the accompanying data (including header length)
 }
 
 func (h *snowflakeHeader) Parse(b []byte) error {
@@ -92,8 +92,8 @@ func (s *SnowflakeReadWriter) Read(b []byte) (int, error) {
 		if header.seq == s.ack {
 
 			s.out = append(s.out, s.buffer[snowflakeHeaderLen:header.length]...)
-			s.ack += len(s.out)
-			//TODO: write an empty length header acknowledging data
+			s.ack += header.length - snowflakeHeaderLen
+			s.sendAck() // write an empty length header acknowledging data
 		}
 		s.buffer = s.buffer[header.length:]
 
@@ -101,6 +101,26 @@ func (s *SnowflakeReadWriter) Read(b []byte) (int, error) {
 		s.out = s.out[n:]
 	}
 	return n, err
+}
+
+func (s *SnowflakeReadWriter) sendAck() error {
+
+	h := new(snowflakeHeader)
+	h.length = snowflakeHeaderLen
+	h.seq = s.seq
+	h.ack = s.ack
+
+	bytes, err := h.Marshal()
+	if err != nil {
+		return err
+	}
+
+	if len(bytes) != snowflakeHeaderLen {
+		return fmt.Errorf("Error crafting acknowledgment packet")
+	}
+	s.Conn.Write(bytes)
+
+	return err
 }
 
 func (c *SnowflakeReadWriter) Write(b []byte) (int, error) {
@@ -116,7 +136,7 @@ func (c *SnowflakeReadWriter) Write(b []byte) (int, error) {
 		return 0, err
 	}
 	bytes = append(bytes, b...)
-	c.seq += h.length - snowflakeHeaderLen
+	c.seq += len(b)
 
 	return c.Conn.Write(bytes)
 }
