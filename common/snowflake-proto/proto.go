@@ -14,7 +14,7 @@ const maxLength = 65535
 type snowflakeHeader struct {
 	seq    uint32
 	ack    uint32
-	length uint16 //length of the accompanying data (including header length)
+	length uint16 //length of the accompanying data (excluding header length)
 }
 
 func (h *snowflakeHeader) Parse(b []byte) error {
@@ -85,18 +85,18 @@ func (s *SnowflakeReadWriter) Read(b []byte) (int, error) {
 		if err != nil {
 			return n, err
 		}
-		if uint16(len(s.buffer)) < header.length {
+		if uint16(len(s.buffer)) < header.length+snowflakeHeaderLen {
 			//we don't have a full chunk yet
 			return n, err
 		}
 		//for now, drop all data with an incorrect sequence number
 		if header.seq == s.ack {
 
-			s.out = append(s.out, s.buffer[snowflakeHeaderLen:header.length]...)
-			s.ack += uint32(header.length) - snowflakeHeaderLen
+			s.out = append(s.out, s.buffer[snowflakeHeaderLen:snowflakeHeaderLen+header.length]...)
+			s.ack += uint32(header.length)
 			s.sendAck() // write an empty length header acknowledging data
 		}
-		s.buffer = s.buffer[header.length:]
+		s.buffer = s.buffer[snowflakeHeaderLen+header.length:]
 
 		n += copy(b[n:], s.out)
 		s.out = s.out[n:]
@@ -107,7 +107,7 @@ func (s *SnowflakeReadWriter) Read(b []byte) (int, error) {
 func (s *SnowflakeReadWriter) sendAck() error {
 
 	h := new(snowflakeHeader)
-	h.length = snowflakeHeaderLen
+	h.length = 0
 	h.seq = s.seq
 	h.ack = s.ack
 
@@ -132,7 +132,7 @@ func (c *SnowflakeReadWriter) Write(b []byte) (n int, err error) {
 		h.length = maxLength
 		err = io.ErrShortWrite
 	} else {
-		h.length = uint16(len(b)) + snowflakeHeaderLen
+		h.length = uint16(len(b))
 	}
 	h.seq = c.seq
 	h.ack = c.ack
