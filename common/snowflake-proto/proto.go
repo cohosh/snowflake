@@ -18,9 +18,9 @@ type snowflakeHeader struct {
 }
 
 func (h *snowflakeHeader) Parse(b []byte) error {
-	h.seq = binary.LittleEndian.Uint32(b[0:4])
-	h.ack = binary.LittleEndian.Uint32(b[4:8])
-	h.length = binary.LittleEndian.Uint16(b[8:10])
+	h.seq = binary.BigEndian.Uint32(b[0:4])
+	h.ack = binary.BigEndian.Uint32(b[4:8])
+	h.length = binary.BigEndian.Uint16(b[8:10])
 
 	return nil
 }
@@ -31,9 +31,9 @@ func (h *snowflakeHeader) Marshal() ([]byte, error) {
 		return nil, fmt.Errorf("nil header")
 	}
 	b := make([]byte, snowflakeHeaderLen, snowflakeHeaderLen)
-	binary.LittleEndian.PutUint32(b[0:4], h.seq)
-	binary.LittleEndian.PutUint32(b[4:8], h.ack)
-	binary.LittleEndian.PutUint16(b[8:10], h.length)
+	binary.BigEndian.PutUint32(b[0:4], h.seq)
+	binary.BigEndian.PutUint32(b[4:8], h.ack)
+	binary.BigEndian.PutUint16(b[8:10], h.length)
 
 	return b, nil
 

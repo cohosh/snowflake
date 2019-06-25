@@ -37,7 +37,7 @@ func TestSnowflakeProto(t *testing.T) {
 			wire = []byte{
 				0x00, 0x00, 0x00, 0x00, //seq
 				0x00, 0x00, 0x00, 0x00, //ack
-				0x0F, 0x00, //len
+				0x00, 0x0F, //len
 				'H', 'E', 'L', 'L', 'O',
 			}
 			received = make([]byte, len(wire), len(wire))
