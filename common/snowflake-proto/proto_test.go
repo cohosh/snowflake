@@ -37,7 +37,7 @@ func TestSnowflakeProto(t *testing.T) {
 			wire = []byte{
 				0x00, 0x00, 0x00, 0x00, //seq
 				0x00, 0x00, 0x00, 0x00, //ack
-				0x11, 0x00, 0x00, 0x00, //len
+				0x0F, 0x00, //len
 				'H', 'E', 'L', 'L', 'O',
 			}
 			received = make([]byte, len(wire), len(wire))
@@ -98,7 +98,7 @@ func TestSnowflakeProto(t *testing.T) {
 		Convey("Test reading multiple chunks", func() {
 			var sent, received []byte
 			sent = []byte{'H', 'E', 'L', 'L', 'O'}
-			received = make([]byte, 15, 15)
+			received = make([]byte, 13, 13)
 
 			n, err := s.Write(sent)
 			n, err = s.Write(sent)

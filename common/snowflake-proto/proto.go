@@ -8,18 +8,19 @@ import (
 
 // Fixed size window used for sequencing and reliability layer
 const windowSize = 1500
-const snowflakeHeaderLen = 12
+const snowflakeHeaderLen = 10
+const maxLength = 65535
 
 type snowflakeHeader struct {
-	seq    int
-	ack    int
-	length int //length of the accompanying data (including header length)
+	seq    uint32
+	ack    uint32
+	length uint16 //length of the accompanying data (including header length)
 }
 
 func (h *snowflakeHeader) Parse(b []byte) error {
-	h.seq = int(binary.LittleEndian.Uint32(b[0:4]))
-	h.ack = int(binary.LittleEndian.Uint32(b[4:8]))
-	h.length = int(binary.LittleEndian.Uint32(b[8:12]))
+	h.seq = binary.LittleEndian.Uint32(b[0:4])
+	h.ack = binary.LittleEndian.Uint32(b[4:8])
+	h.length = binary.LittleEndian.Uint16(b[8:10])
 
 	return nil
 }
@@ -29,10 +30,10 @@ func (h *snowflakeHeader) Marshal() ([]byte, error) {
 	if h == nil {
 		return nil, fmt.Errorf("nil header")
 	}
-	b := make([]byte, 12, 12)
-	binary.LittleEndian.PutUint32(b[0:4], uint32(h.seq))
-	binary.LittleEndian.PutUint32(b[4:8], uint32(h.ack))
-	binary.LittleEndian.PutUint32(b[8:12], uint32(h.length))
+	b := make([]byte, snowflakeHeaderLen, snowflakeHeaderLen)
+	binary.LittleEndian.PutUint32(b[0:4], h.seq)
+	binary.LittleEndian.PutUint32(b[4:8], h.ack)
+	binary.LittleEndian.PutUint16(b[8:10], h.length)
 
 	return b, nil
 
@@ -50,8 +51,8 @@ func ParseHeader(b []byte) (*snowflakeHeader, error) {
 }
 
 type SnowflakeReadWriter struct {
-	seq int
-	ack int
+	seq uint32
+	ack uint32
 
 	Conn io.ReadWriteCloser
 
@@ -84,7 +85,7 @@ func (s *SnowflakeReadWriter) Read(b []byte) (int, error) {
 		if err != nil {
 			return n, err
 		}
-		if len(s.buffer) < header.length {
+		if uint16(len(s.buffer)) < header.length {
 			//we don't have a full chunk yet
 			return n, err
 		}
@@ -92,7 +93,7 @@ func (s *SnowflakeReadWriter) Read(b []byte) (int, error) {
 		if header.seq == s.ack {
 
 			s.out = append(s.out, s.buffer[snowflakeHeaderLen:header.length]...)
-			s.ack += header.length - snowflakeHeaderLen
+			s.ack += uint32(header.length) - snowflakeHeaderLen
 			s.sendAck() // write an empty length header acknowledging data
 		}
 		s.buffer = s.buffer[header.length:]
@@ -123,11 +124,16 @@ func (s *SnowflakeReadWriter) sendAck() error {
 	return err
 }
 
-func (c *SnowflakeReadWriter) Write(b []byte) (int, error) {
+func (c *SnowflakeReadWriter) Write(b []byte) (n int, err error) {
 
 	//need to append a header onto
 	h := new(snowflakeHeader)
-	h.length = len(b) + snowflakeHeaderLen
+	if len(b) > maxLength {
+		h.length = maxLength
+		err = io.ErrShortWrite
+	} else {
+		h.length = uint16(len(b)) + snowflakeHeaderLen
+	}
 	h.seq = c.seq
 	h.ack = c.ack
 
@@ -136,9 +142,15 @@ func (c *SnowflakeReadWriter) Write(b []byte) (int, error) {
 		return 0, err
 	}
 	bytes = append(bytes, b...)
-	c.seq += len(b)
+	c.seq += uint32(len(b))
 
-	return c.Conn.Write(bytes)
+	n, err2 := c.Conn.Write(bytes)
+	//prioritize underlying connection error
+	if err2 != nil {
+		err = err2
+	}
+	return n, err
+
 }
 
 func (c *SnowflakeReadWriter) Close() error {
