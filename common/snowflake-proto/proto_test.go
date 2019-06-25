@@ -1,22 +1,23 @@
 package proto
 
 import (
-	"bytes"
+	"io"
 	"testing"
 
 	. "github.com/smartystreets/goconvey/convey"
 )
 
 type stubConn struct {
-	Buf *bytes.Buffer
+	pr *io.PipeReader
+	pw *io.PipeWriter
 }
 
 func (c *stubConn) Read(b []byte) (int, error) {
-	return c.Buf.Read(b)
+	return c.pr.Read(b)
 }
 
 func (c *stubConn) Write(b []byte) (int, error) {
-	return c.Buf.Write(b)
+	return c.pw.Write(b)
 }
 
 func (c *stubConn) Close() error {
@@ -26,8 +27,8 @@ func (c *stubConn) Close() error {
 func TestSnowflakeProto(t *testing.T) {
 	Convey("Connection set up", t, func() {
 
-		buffer := new(bytes.Buffer)
-		sConn := &stubConn{Buf: buffer}
+		pr, pw := io.Pipe()
+		sConn := &stubConn{pr: pr, pw: pw}
 
 		s := NewSnowflakeReadWriter(sConn)
 
@@ -55,7 +56,9 @@ func TestSnowflakeProto(t *testing.T) {
 
 			//Make sure seq and ack have been updated
 			So(s.seq, ShouldEqual, 5)
+			s.lock.Lock()
 			So(s.ack, ShouldEqual, 5)
+			s.lock.Unlock()
 
 			// Check that acknowledgement packet was written
 			//n, err = s.Read(received)
@@ -84,7 +87,9 @@ func TestSnowflakeProto(t *testing.T) {
 			So(err, ShouldEqual, nil)
 			So(n2, ShouldEqual, 2)
 			So(received[:n2], ShouldResemble, sent[n:n+n2])
+			s.lock.Lock()
 			So(s.ack, ShouldEqual, 5)
+			s.lock.Unlock()
 		})
 
 		Convey("Test reading multiple chunks", func() {
@@ -92,8 +97,12 @@ func TestSnowflakeProto(t *testing.T) {
 			sent = []byte{'H', 'E', 'L', 'L', 'O'}
 			received = make([]byte, 3, 3)
 
-			n, err := s.Write(sent)
-			n, err = s.Write(sent)
+			var n int
+			var err error
+			go func() {
+				s.Write(sent)
+				s.Write(sent)
+			}()
 
 			n, err = s.Read(received)
 			buffer = append(buffer, received[:n]...)
@@ -119,7 +128,9 @@ func TestSnowflakeProto(t *testing.T) {
 			So(n, ShouldEqual, 2)
 			So(buffer, ShouldResemble, append(sent, sent...))
 
+			s.lock.Lock()
 			So(s.ack, ShouldEqual, 2*5)
+			s.lock.Unlock()
 
 		})
 	})

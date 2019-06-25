@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"sync"
 )
 
 // Fixed size window used for sequencing and reliability layer
@@ -63,6 +64,7 @@ type SnowflakeReadWriter struct {
 
 	Conn io.ReadWriteCloser
 	pr   *io.PipeReader
+	lock sync.Mutex //need a lock on the acknowledgement since multiple goroutines access it
 }
 
 func NewSnowflakeReadWriter(sConn io.ReadWriteCloser) *SnowflakeReadWriter {
@@ -84,12 +86,14 @@ func (s *SnowflakeReadWriter) readLoop(pw *io.PipeWriter) {
 		if err != nil {
 			break
 		}
+		s.lock.Lock()
 		if header.seq == s.ack {
 			_, err = io.CopyN(pw, s.Conn, int64(header.length))
 			s.ack += uint32(header.length)
 		} else {
 			_, err = io.CopyN(ioutil.Discard, s.Conn, int64(header.length))
 		}
+		s.lock.Unlock()
 	}
 	pw.CloseWithError(err)
 }
@@ -104,7 +108,9 @@ func (s *SnowflakeReadWriter) sendAck() error {
 	h := new(snowflakeHeader)
 	h.length = 0
 	h.seq = s.seq
+	s.lock.Lock()
 	h.ack = s.ack
+	s.lock.Unlock()
 
 	bytes, err := h.Marshal()
 	if err != nil {
@@ -130,7 +136,9 @@ func (c *SnowflakeReadWriter) Write(b []byte) (n int, err error) {
 		h.length = uint16(len(b))
 	}
 	h.seq = c.seq
+	c.lock.Lock()
 	h.ack = c.ack
+	c.lock.Unlock()
 
 	bytes, err := h.Marshal()
 	if err != nil {
