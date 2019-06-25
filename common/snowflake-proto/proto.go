@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"io/ioutil"
 )
 
 // Fixed size window used for sequencing and reliability layer
@@ -41,13 +42,19 @@ func (h *snowflakeHeader) Marshal() ([]byte, error) {
 
 // Parses a webRTC header from bytes received on the
 // webRTC connection
-func ParseHeader(b []byte) (*snowflakeHeader, error) {
+func readHeader(r io.Reader, h *snowflakeHeader) error {
 
-	h := new(snowflakeHeader)
-	if err := h.Parse(b); err != nil {
-		return nil, err
+	b := make([]byte, snowflakeHeaderLen, snowflakeHeaderLen)
+
+	_, err := io.ReadAtLeast(r, b, snowflakeHeaderLen)
+	if err != nil {
+		return err
 	}
-	return h, nil
+
+	if err := h.Parse(b); err != nil {
+		return err
+	}
+	return nil
 }
 
 type SnowflakeReadWriter struct {
@@ -55,53 +62,41 @@ type SnowflakeReadWriter struct {
 	ack uint32
 
 	Conn io.ReadWriteCloser
+	pr   *io.PipeReader
+}
 
-	buffer    []byte
-	remaining int
-	out       []byte
+func NewSnowflakeReadWriter(sConn io.ReadWriteCloser) *SnowflakeReadWriter {
+	pr, pw := io.Pipe()
+	s := &SnowflakeReadWriter{
+		Conn: sConn,
+		pr:   pr,
+	}
+	go s.readLoop(pw)
+	return s
+}
+
+func (s *SnowflakeReadWriter) readLoop(pw *io.PipeWriter) {
+	var err error
+	for err == nil {
+		// strip headers and write data into the pipe
+		var header snowflakeHeader
+		err = readHeader(s.Conn, &header)
+		if err != nil {
+			break
+		}
+		if header.seq == s.ack {
+			_, err = io.CopyN(pw, s.Conn, int64(header.length))
+			s.ack += uint32(header.length)
+		} else {
+			_, err = io.CopyN(ioutil.Discard, s.Conn, int64(header.length))
+		}
+	}
+	pw.CloseWithError(err)
 }
 
 func (s *SnowflakeReadWriter) Read(b []byte) (int, error) {
-	length, err := s.Conn.Read(b)
-	if err != nil {
-		return length, err
-	}
-	s.buffer = append(s.buffer, b...)
-
-	n := copy(b, s.out)
-	s.out = s.out[n:]
-	if n == len(b) {
-		return n, err
-	}
-
-	for len(s.buffer) > 0 {
-		if len(s.buffer) < snowflakeHeaderLen {
-			//we don't have enough data for a full header yet
-			return n, err
-		}
-
-		// first read in the header and update the sequence and acknowledgement numbers
-		header, err := ParseHeader(s.buffer)
-		if err != nil {
-			return n, err
-		}
-		if uint16(len(s.buffer)) < header.length+snowflakeHeaderLen {
-			//we don't have a full chunk yet
-			return n, err
-		}
-		//for now, drop all data with an incorrect sequence number
-		if header.seq == s.ack {
-
-			s.out = append(s.out, s.buffer[snowflakeHeaderLen:snowflakeHeaderLen+header.length]...)
-			s.ack += uint32(header.length)
-			s.sendAck() // write an empty length header acknowledging data
-		}
-		s.buffer = s.buffer[snowflakeHeaderLen+header.length:]
-
-		n += copy(b[n:], s.out)
-		s.out = s.out[n:]
-	}
-	return n, err
+	// read de-headered data from the pipe
+	return s.pr.Read(b)
 }
 
 func (s *SnowflakeReadWriter) sendAck() error {
