@@ -4,6 +4,7 @@ All of Snowflake's DOM manipulation and inputs.
 
 class UI
   active: false
+  enabled: false
 
   setStatus: (msg) ->
 
@@ -71,10 +72,17 @@ class WebExtUI extends UI
       total: @stats.reduce ((t, c) ->
         t + c
       ), 0
+      enabled: @enabled
 
   onConnect: (port) =>
     @port = port
     port.onDisconnect.addListener @onDisconnect
+    port.onMessage.addListener @onMessage
+    @postActive()
+  
+  onMessage: (m) =>
+    @enabled = m.enabled
+    update()
     @postActive()
 
   onDisconnect: (port) =>
