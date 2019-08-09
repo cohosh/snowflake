@@ -169,18 +169,20 @@ func NewMetrics(metricsLogger *log.Logger) (*Metrics, error) {
 func (m *Metrics) logMetrics() {
 	heartbeat := time.Tick(metricsResolution)
 	for range heartbeat {
-		m.printMetrics()
+		m.logger.Print(m.printMetrics())
 		m.zeroMetrics()
 	}
 }
 
-func (m *Metrics) printMetrics() {
-	m.logger.Println("snowflake-stats-end", time.Now().UTC().Format("2006-01-02 15:04:05"), fmt.Sprintf("(%d s)", int(metricsResolution.Seconds())))
-	m.logger.Println("snowflake-ips", m.countryStats.Display())
-	m.logger.Println("snowflake-ips-total", len(m.countryStats.addrs))
-	m.logger.Println("snowflake-idle-count", binCount(m.proxyIdleCount))
-	m.logger.Println("client-denied-count", binCount(m.clientDeniedCount))
-	m.logger.Println("client-snowflake-match-count", binCount(m.clientProxyMatchCount))
+func (m *Metrics) printMetrics() string {
+	s := fmt.Sprintln("snowflake-stats-end", time.Now().UTC().Format("2006-01-02 15:04:05"), fmt.Sprintf("(%d s)", int(metricsResolution.Seconds())))
+	s += fmt.Sprintln("snowflake-ips", m.countryStats.Display())
+	s += fmt.Sprintln("snowflake-ips-total", len(m.countryStats.addrs))
+	s += fmt.Sprintln("snowflake-idle-count", binCount(m.proxyIdleCount))
+	s += fmt.Sprintln("client-denied-count", binCount(m.clientDeniedCount))
+	s += fmt.Sprintln("client-snowflake-match-count", binCount(m.clientProxyMatchCount))
+
+	return s
 }
 
 // Restores all metrics to original values

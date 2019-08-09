@@ -418,7 +418,7 @@ func TestMetrics(t *testing.T) {
 			p.offerChannel <- nil
 			<-done
 
-			ctx.metrics.printMetrics()
+			ctx.metrics.logger.Print(ctx.metrics.printMetrics())
 			So(buf.String(), ShouldResemble, "snowflake-stats-end "+time.Now().UTC().Format("2006-01-02 15:04:05")+" (86400 s)\nsnowflake-ips CA=1\nsnowflake-ips-total 1\nsnowflake-idle-count 8\nclient-denied-count 0\nclient-snowflake-match-count 0\n")
 		})
 
@@ -431,13 +431,13 @@ func TestMetrics(t *testing.T) {
 
 			clientOffers(ctx, w, r)
 
-			ctx.metrics.printMetrics()
+			ctx.metrics.logger.Print(ctx.metrics.printMetrics())
 			So(buf.String(), ShouldResemble, "snowflake-stats-end "+time.Now().UTC().Format("2006-01-02 15:04:05")+" (86400 s)\nsnowflake-ips \nsnowflake-ips-total 0\nsnowflake-idle-count 0\nclient-denied-count 8\nclient-snowflake-match-count 0\n")
 
 			// Test reset
 			buf.Reset()
 			ctx.metrics.zeroMetrics()
-			ctx.metrics.printMetrics()
+			ctx.metrics.logger.Print(ctx.metrics.printMetrics())
 			So(buf.String(), ShouldResemble, "snowflake-stats-end "+time.Now().UTC().Format("2006-01-02 15:04:05")+" (86400 s)\nsnowflake-ips \nsnowflake-ips-total 0\nsnowflake-idle-count 0\nclient-denied-count 0\nclient-snowflake-match-count 0\n")
 		})
 		//Test addition of client matches
@@ -458,7 +458,7 @@ func TestMetrics(t *testing.T) {
 			snowflake.answerChannel <- []byte("fake answer")
 			<-done
 
-			ctx.metrics.printMetrics()
+			ctx.metrics.logger.Print(ctx.metrics.printMetrics())
 			So(buf.String(), ShouldResemble, "snowflake-stats-end "+time.Now().UTC().Format("2006-01-02 15:04:05")+" (86400 s)\nsnowflake-ips \nsnowflake-ips-total 0\nsnowflake-idle-count 0\nclient-denied-count 0\nclient-snowflake-match-count 8\n")
 		})
 		//Test rounding boundary
@@ -477,12 +477,12 @@ func TestMetrics(t *testing.T) {
 			clientOffers(ctx, w, r)
 			clientOffers(ctx, w, r)
 
-			ctx.metrics.printMetrics()
+			ctx.metrics.logger.Print(ctx.metrics.printMetrics())
 			So(buf.String(), ShouldResemble, "snowflake-stats-end "+time.Now().UTC().Format("2006-01-02 15:04:05")+" (86400 s)\nsnowflake-ips \nsnowflake-ips-total 0\nsnowflake-idle-count 0\nclient-denied-count 8\nclient-snowflake-match-count 0\n")
 
 			clientOffers(ctx, w, r)
 			buf.Reset()
-			ctx.metrics.printMetrics()
+			ctx.metrics.logger.Print(ctx.metrics.printMetrics())
 			So(buf.String(), ShouldResemble, "snowflake-stats-end "+time.Now().UTC().Format("2006-01-02 15:04:05")+" (86400 s)\nsnowflake-ips \nsnowflake-ips-total 0\nsnowflake-idle-count 0\nclient-denied-count 16\nclient-snowflake-match-count 0\n")
 		})
 
@@ -514,7 +514,7 @@ func TestMetrics(t *testing.T) {
 			p.offerChannel <- nil
 			<-done
 
-			ctx.metrics.printMetrics()
+			ctx.metrics.logger.Print(ctx.metrics.printMetrics())
 			So(buf.String(), ShouldResemble, "snowflake-stats-end "+time.Now().UTC().Format("2006-01-02 15:04:05")+" (86400 s)\nsnowflake-ips CA=1\nsnowflake-ips-total 1\nsnowflake-idle-count 8\nclient-denied-count 0\nclient-snowflake-match-count 0\n")
 		})
 	})

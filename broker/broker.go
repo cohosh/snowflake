@@ -246,6 +246,10 @@ func debugHandler(ctx *BrokerContext, w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(s))
 }
 
+func metricsHandler(ctx *BrokerContext, w http.ResponseWriter, r *http.Request) {
+	w.Write([]byte(ctx.metrics.printMetrics()))
+}
+
 func robotsTxtHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Write([]byte("User-agent: *\nDisallow: /\n"))
@@ -313,6 +317,7 @@ func main() {
 	http.Handle("/client", SnowflakeHandler{ctx, clientOffers})
 	http.Handle("/answer", SnowflakeHandler{ctx, proxyAnswers})
 	http.Handle("/debug", SnowflakeHandler{ctx, debugHandler})
+	http.Handle("/metrics", SnowflakeHandler{ctx, metricsHandler})
 
 	server := http.Server{
 		Addr: addr,
