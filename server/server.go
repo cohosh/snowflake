@@ -176,7 +176,7 @@ func webSocketHandler(ws *websocket.WebSocket) {
 	}
 	defer or.Close()
 
-	sConn := &proto.SnowflakeReadWriter{Conn: &conn}
+	sConn := &proto.SnowflakeConn{Conn: &conn}
 
 	proxy(or, sConn)
 }

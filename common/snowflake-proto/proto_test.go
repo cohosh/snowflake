@@ -1,39 +1,24 @@
 package proto
 
 import (
-	"io"
+	"net"
+	"sync"
 	"testing"
 
 	. "github.com/smartystreets/goconvey/convey"
 )
 
-type stubConn struct {
-	pr *io.PipeReader
-	pw *io.PipeWriter
-}
-
-func (c *stubConn) Read(b []byte) (int, error) {
-	return c.pr.Read(b)
-}
-
-func (c *stubConn) Write(b []byte) (int, error) {
-	return c.pw.Write(b)
-}
-
-func (c *stubConn) Close() error {
-	return nil
-}
-
 func TestSnowflakeProto(t *testing.T) {
-	Convey("Connection set up", t, func() {
+	Convey("Connection set up", t, func(ctx C) {
 
-		pr, pw := io.Pipe()
-		sConn := &stubConn{pr: pr, pw: pw}
+		client, server := net.Pipe()
 
-		s := NewSnowflakeReadWriter(sConn)
+		c := NewSnowflakeConn(client)
+		s := NewSnowflakeConn(server)
 
-		Convey("Create correct headers", func() {
+		Convey("Create correct headers", func(ctx C) {
 			var sent, received, wire []byte
+			var wg sync.WaitGroup
 			sent = []byte{'H', 'E', 'L', 'L', 'O'}
 			wire = []byte{
 				0x00, 0x00, 0x00, 0x00, //seq
@@ -43,22 +28,28 @@ func TestSnowflakeProto(t *testing.T) {
 			}
 			received = make([]byte, len(wire), len(wire))
 
-			n, err := s.Write(sent)
+			wg.Add(2)
+			go func() {
+				n, err := c.Write(sent)
+				ctx.So(n, ShouldEqual, len(sent))
+				ctx.So(err, ShouldEqual, nil)
+				ctx.So(c.seq, ShouldEqual, 5)
+				wg.Done()
+			}()
 
-			So(n, ShouldEqual, len(sent)+snowflakeHeaderLen)
-			So(err, ShouldEqual, nil)
+			go func() {
+				n, err := s.Read(received)
 
-			n, err = s.Read(received)
+				ctx.So(err, ShouldEqual, nil)
+				ctx.So(n, ShouldEqual, len(sent))
+				ctx.So(received[:n], ShouldResemble, sent)
+				s.lock.Lock()
+				ctx.So(s.ack, ShouldEqual, 5)
+				s.lock.Unlock()
+				wg.Done()
+			}()
 
-			So(err, ShouldEqual, nil)
-			So(n, ShouldEqual, len(sent))
-			So(received[:n], ShouldResemble, sent)
-
-			//Make sure seq and ack have been updated
-			So(s.seq, ShouldEqual, 5)
-			s.lock.Lock()
-			So(s.ack, ShouldEqual, 5)
-			s.lock.Unlock()
+			wg.Wait()
 
 			// Check that acknowledgement packet was written
 			//n, err = s.Read(received)
@@ -67,70 +58,92 @@ func TestSnowflakeProto(t *testing.T) {
 
 		})
 
-		Convey("Partial reads work correctly", func() {
+		Convey("Partial reads work correctly", func(ctx C) {
 			var sent, received []byte
+			var wg sync.WaitGroup
 			sent = []byte{'H', 'E', 'L', 'L', 'O'}
 			received = make([]byte, 3, 3)
 
-			n, err := s.Write(sent)
+			wg.Add(2)
+			go func() {
+				n, err := c.Write(sent)
+				ctx.So(err, ShouldEqual, nil)
+				ctx.So(n, ShouldEqual, 5)
+				wg.Done()
+			}()
 
 			//Read in first part of message
-			n, err = s.Read(received)
+			go func() {
+				n, err := s.Read(received)
 
-			So(err, ShouldEqual, nil)
-			So(n, ShouldEqual, 3)
-			So(received[:n], ShouldResemble, sent[:n])
+				ctx.So(err, ShouldEqual, nil)
+				ctx.So(n, ShouldEqual, 3)
+				ctx.So(received[:n], ShouldResemble, sent[:n])
 
-			//Read in rest of message
-			n2, err := s.Read(received)
+				//Read in rest of message
+				n2, err := s.Read(received)
 
-			So(err, ShouldEqual, nil)
-			So(n2, ShouldEqual, 2)
-			So(received[:n2], ShouldResemble, sent[n:n+n2])
-			s.lock.Lock()
-			So(s.ack, ShouldEqual, 5)
-			s.lock.Unlock()
+				ctx.So(err, ShouldEqual, nil)
+				ctx.So(n2, ShouldEqual, 2)
+				ctx.So(received[:n2], ShouldResemble, sent[n:n+n2])
+
+				s.lock.Lock()
+				ctx.So(s.ack, ShouldEqual, 5)
+				s.lock.Unlock()
+				wg.Done()
+			}()
+
+			wg.Wait()
+
 		})
 
-		Convey("Test reading multiple chunks", func() {
+		Convey("Test reading multiple chunks", func(ctx C) {
 			var sent, received, buffer []byte
+			var wg sync.WaitGroup
 			sent = []byte{'H', 'E', 'L', 'L', 'O'}
 			received = make([]byte, 3, 3)
 
 			var n int
 			var err error
+
+			wg.Add(2)
 			go func() {
-				s.Write(sent)
-				s.Write(sent)
+				c.Write(sent)
+				c.Write(sent)
+				wg.Done()
 			}()
 
-			n, err = s.Read(received)
-			buffer = append(buffer, received[:n]...)
-			So(err, ShouldEqual, nil)
-			So(n, ShouldEqual, 3)
-			So(buffer, ShouldResemble, sent[:3])
+			go func() {
+				n, err = s.Read(received)
+				buffer = append(buffer, received[:n]...)
+				ctx.So(err, ShouldEqual, nil)
+				ctx.So(n, ShouldEqual, 3)
+				ctx.So(buffer, ShouldResemble, sent[:3])
 
-			n, err = s.Read(received)
-			buffer = append(buffer, received[:n]...)
-			So(err, ShouldEqual, nil)
-			So(n, ShouldEqual, 2)
-			So(buffer, ShouldResemble, sent)
+				n, err = s.Read(received)
+				buffer = append(buffer, received[:n]...)
+				ctx.So(err, ShouldEqual, nil)
+				ctx.So(n, ShouldEqual, 2)
+				ctx.So(buffer, ShouldResemble, sent)
 
-			n, err = s.Read(received)
-			buffer = append(buffer, received[:n]...)
-			So(err, ShouldEqual, nil)
-			So(n, ShouldEqual, 3)
-			So(buffer, ShouldResemble, append(sent, sent[:3]...))
+				n, err = s.Read(received)
+				buffer = append(buffer, received[:n]...)
+				ctx.So(err, ShouldEqual, nil)
+				ctx.So(n, ShouldEqual, 3)
+				ctx.So(buffer, ShouldResemble, append(sent, sent[:3]...))
 
-			n, err = s.Read(received)
-			buffer = append(buffer, received[:n]...)
-			So(err, ShouldEqual, nil)
-			So(n, ShouldEqual, 2)
-			So(buffer, ShouldResemble, append(sent, sent...))
+				n, err = s.Read(received)
+				buffer = append(buffer, received[:n]...)
+				ctx.So(err, ShouldEqual, nil)
+				ctx.So(n, ShouldEqual, 2)
+				ctx.So(buffer, ShouldResemble, append(sent, sent...))
 
-			s.lock.Lock()
-			So(s.ack, ShouldEqual, 2*5)
-			s.lock.Unlock()
+				s.lock.Lock()
+				ctx.So(s.ack, ShouldEqual, 2*5)
+				s.lock.Unlock()
+				wg.Done()
+			}()
+			wg.Wait()
 
 		})
 	})

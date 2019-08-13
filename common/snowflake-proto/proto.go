@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net"
 	"sync"
+	"time"
 )
 
 // Fixed size window used for sequencing and reliability layer
@@ -63,7 +65,7 @@ func readHeader(r io.Reader, h *snowflakeHeader) error {
 	return nil
 }
 
-type SnowflakeReadWriter struct {
+type SnowflakeConn struct {
 	seq       uint32
 	ack       uint32
 	sessionID []byte
@@ -73,9 +75,9 @@ type SnowflakeReadWriter struct {
 	lock sync.Mutex //need a lock on the acknowledgement since multiple goroutines access it
 }
 
-func NewSnowflakeReadWriter(sConn io.ReadWriteCloser) *SnowflakeReadWriter {
+func NewSnowflakeConn(sConn net.Conn) *SnowflakeConn {
 	pr, pw := io.Pipe()
-	s := &SnowflakeReadWriter{
+	s := &SnowflakeConn{
 		Conn: sConn,
 		pr:   pr,
 	}
@@ -83,7 +85,7 @@ func NewSnowflakeReadWriter(sConn io.ReadWriteCloser) *SnowflakeReadWriter {
 	return s
 }
 
-func (s *SnowflakeReadWriter) genSessionID() error {
+func (s *SnowflakeConn) genSessionID() error {
 	buf := make([]byte, sessionIDLength)
 	_, err := rand.Read(buf)
 	if err != nil {
@@ -93,7 +95,7 @@ func (s *SnowflakeReadWriter) genSessionID() error {
 	return nil
 }
 
-func (s *SnowflakeReadWriter) readLoop(pw *io.PipeWriter) {
+func (s *SnowflakeConn) readLoop(pw *io.PipeWriter) {
 	var err error
 	for err == nil {
 		// strip headers and write data into the pipe
@@ -118,12 +120,12 @@ func (s *SnowflakeReadWriter) readLoop(pw *io.PipeWriter) {
 	pw.CloseWithError(err)
 }
 
-func (s *SnowflakeReadWriter) Read(b []byte) (int, error) {
+func (s *SnowflakeConn) Read(b []byte) (int, error) {
 	// read de-headered data from the pipe
 	return s.pr.Read(b)
 }
 
-func (s *SnowflakeReadWriter) sendAck() error {
+func (s *SnowflakeConn) sendAck() error {
 
 	h := new(snowflakeHeader)
 	h.length = 0
@@ -145,7 +147,7 @@ func (s *SnowflakeReadWriter) sendAck() error {
 	return err
 }
 
-func (c *SnowflakeReadWriter) Write(b []byte) (n int, err error) {
+func (c *SnowflakeConn) Write(b []byte) (n int, err error) {
 
 	//need to append a header onto
 	h := new(snowflakeHeader)
@@ -172,10 +174,30 @@ func (c *SnowflakeReadWriter) Write(b []byte) (n int, err error) {
 	if err2 != nil {
 		err = err2
 	}
-	return n, err
+	return len(b), err
 
 }
 
-func (c *SnowflakeReadWriter) Close() error {
+func (c *SnowflakeConn) Close() error {
 	return c.Conn.Close()
+}
+
+func (c *SnowflakeConn) LocalAddr() net.Addr {
+	return nil
+}
+
+func (c *SnowflakeConn) RemoteAddr() net.Addr {
+	return nil
+}
+
+func (c *SnowflakeConn) SetDeadline(t time.Time) error {
+	return fmt.Errorf("SetDeadline not implemented")
+}
+
+func (c *SnowflakeConn) SetReadDeadline(t time.Time) error {
+	return fmt.Errorf("SetReadDeadline not implemented")
+}
+
+func (c *SnowflakeConn) SetWriteDeadline(t time.Time) error {
+	return fmt.Errorf("SetWriteDeadline not implemented")
 }
