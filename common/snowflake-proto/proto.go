@@ -1,6 +1,7 @@
 package proto
 
 import (
+	"crypto/rand"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -10,19 +11,22 @@ import (
 
 // Fixed size window used for sequencing and reliability layer
 const windowSize = 1500
-const snowflakeHeaderLen = 10
+const snowflakeHeaderLen = 18
 const maxLength = 65535
+const sessionIDLength = 8
 
 type snowflakeHeader struct {
-	seq    uint32
-	ack    uint32
-	length uint16 //length of the accompanying data (excluding header length)
+	seq       uint32
+	ack       uint32
+	length    uint16 //length of the accompanying data (excluding header length)
+	sessionID []byte
 }
 
 func (h *snowflakeHeader) Parse(b []byte) error {
 	h.seq = binary.BigEndian.Uint32(b[0:4])
 	h.ack = binary.BigEndian.Uint32(b[4:8])
 	h.length = binary.BigEndian.Uint16(b[8:10])
+	h.sessionID = b[10:18]
 
 	return nil
 }
@@ -36,6 +40,7 @@ func (h *snowflakeHeader) Marshal() ([]byte, error) {
 	binary.BigEndian.PutUint32(b[0:4], h.seq)
 	binary.BigEndian.PutUint32(b[4:8], h.ack)
 	binary.BigEndian.PutUint16(b[8:10], h.length)
+	copy(b[10:18], h.sessionID)
 
 	return b, nil
 
@@ -59,8 +64,9 @@ func readHeader(r io.Reader, h *snowflakeHeader) error {
 }
 
 type SnowflakeReadWriter struct {
-	seq uint32
-	ack uint32
+	seq       uint32
+	ack       uint32
+	sessionID []byte
 
 	Conn io.ReadWriteCloser
 	pr   *io.PipeReader
@@ -75,6 +81,16 @@ func NewSnowflakeReadWriter(sConn io.ReadWriteCloser) *SnowflakeReadWriter {
 	}
 	go s.readLoop(pw)
 	return s
+}
+
+func (s *SnowflakeReadWriter) genSessionID() error {
+	buf := make([]byte, sessionIDLength)
+	_, err := rand.Read(buf)
+	if err != nil {
+		return err
+	}
+	s.sessionID = buf
+	return nil
 }
 
 func (s *SnowflakeReadWriter) readLoop(pw *io.PipeWriter) {
@@ -92,6 +108,10 @@ func (s *SnowflakeReadWriter) readLoop(pw *io.PipeWriter) {
 			s.ack += uint32(header.length)
 		} else {
 			_, err = io.CopyN(ioutil.Discard, s.Conn, int64(header.length))
+		}
+		//save session ID from client
+		if s.sessionID == nil {
+			s.sessionID = header.sessionID
 		}
 		s.lock.Unlock()
 	}
