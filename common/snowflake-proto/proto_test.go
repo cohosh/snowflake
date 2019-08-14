@@ -1,9 +1,11 @@
 package proto
 
 import (
+	"io"
 	"net"
 	"sync"
 	"testing"
+	"time"
 
 	. "github.com/smartystreets/goconvey/convey"
 )
@@ -17,16 +19,10 @@ func TestSnowflakeProto(t *testing.T) {
 		s := NewSnowflakeConn(server)
 
 		Convey("Create correct headers", func(ctx C) {
-			var sent, received, wire []byte
+			var sent, received []byte
 			var wg sync.WaitGroup
 			sent = []byte{'H', 'E', 'L', 'L', 'O'}
-			wire = []byte{
-				0x00, 0x00, 0x00, 0x00, //seq
-				0x00, 0x00, 0x00, 0x00, //ack
-				0x00, 0x05, //len
-				'H', 'E', 'L', 'L', 'O',
-			}
-			received = make([]byte, len(wire), len(wire))
+			received = make([]byte, len(sent), len(sent))
 
 			wg.Add(2)
 			go func() {
@@ -146,6 +142,34 @@ func TestSnowflakeProto(t *testing.T) {
 			wg.Wait()
 
 		})
-	})
 
+		Convey("Check timeout", func(ctx C) {
+			var sent, received []byte
+			var wg sync.WaitGroup
+			sent = []byte{'H', 'E', 'L', 'L', 'O'}
+			received = make([]byte, len(sent), len(sent))
+
+			wg.Add(2)
+			go func() {
+				n, err := c.Write(sent)
+				ctx.So(n, ShouldEqual, len(sent))
+				ctx.So(err, ShouldEqual, nil)
+				ctx.So(c.seq, ShouldEqual, 5)
+				wg.Done()
+			}()
+			go func() {
+				s.Read(received)
+				wg.Done()
+			}()
+			wg.Wait()
+			wg.Add(1)
+			time.AfterFunc(10*time.Second, func() {
+				//check to see that connections are closed
+				_, err := c.Write(sent)
+				ctx.So(err, ShouldEqual, io.ErrClosedPipe)
+				wg.Done()
+			})
+			wg.Wait()
+		})
+	})
 }

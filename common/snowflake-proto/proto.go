@@ -16,6 +16,7 @@ const windowSize = 1500
 const snowflakeHeaderLen = 18
 const maxLength = 65535
 const sessionIDLength = 8
+const snowflakeTimeout = 10 * time.Second
 
 type snowflakeHeader struct {
 	seq       uint32
@@ -73,13 +74,17 @@ type SnowflakeConn struct {
 	Conn io.ReadWriteCloser
 	pr   *io.PipeReader
 	lock sync.Mutex //need a lock on the acknowledgement since multiple goroutines access it
+
+	timeout time.Duration
+	acked   uint32
 }
 
 func NewSnowflakeConn(sConn net.Conn) *SnowflakeConn {
 	pr, pw := io.Pipe()
 	s := &SnowflakeConn{
-		Conn: sConn,
-		pr:   pr,
+		Conn:    sConn,
+		pr:      pr,
+		timeout: snowflakeTimeout,
 	}
 	go s.readLoop(pw)
 	return s
@@ -110,6 +115,9 @@ func (s *SnowflakeConn) readLoop(pw *io.PipeWriter) {
 			s.ack += uint32(header.length)
 		} else {
 			_, err = io.CopyN(ioutil.Discard, s.Conn, int64(header.length))
+		}
+		if header.ack > s.acked {
+			s.acked = header.ack
 		}
 		//save session ID from client
 		if s.sessionID == nil {
@@ -174,6 +182,15 @@ func (c *SnowflakeConn) Write(b []byte) (n int, err error) {
 	if err2 != nil {
 		err = err2
 	}
+
+	//set a timer on the acknowledgement
+	sentSeq := c.seq
+	time.AfterFunc(c.timeout, func() {
+		if c.acked < sentSeq {
+			c.Close()
+		}
+	})
+
 	return len(b), err
 
 }
