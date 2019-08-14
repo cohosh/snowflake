@@ -1,10 +1,10 @@
 
 class Config {}
 
-Config.prototype.brokerUrl = 'snowflake-broker.freehaven.net';
+Config.prototype.brokerUrl = 'snowflake-broker.torproject.net';
 
 Config.prototype.relayAddr = {
-  host: 'snowflake.freehaven.net',
+  host: 'snowflake.torproject.net',
   port: '443'
 };
 

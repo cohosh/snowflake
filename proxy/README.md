@@ -68,6 +68,6 @@ ssh staticiforme 'static-update-component snowflake.torproject.org'
 ### Parameters
 
 With no parameters,
-snowflake uses the default relay `snowflake.freehaven.net:443` and
+snowflake uses the default relay `snowflake.torproject.net:443` and
 uses automatic signaling with the default broker at
-`https://snowflake-broker.freehaven.net/`.
+`https://snowflake-broker.torproject.net/`.
