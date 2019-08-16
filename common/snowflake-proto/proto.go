@@ -105,13 +105,14 @@ func (s *SnowflakeConn) readLoop(pw *io.PipeWriter) {
 	for err == nil {
 		// strip headers and write data into the pipe
 		var header snowflakeHeader
+		var n int64
 		err = readHeader(s.Conn, &header)
 		if err != nil {
 			break
 		}
 		s.lock.Lock()
 		if header.seq == s.ack {
-			_, err = io.CopyN(pw, s.Conn, int64(header.length))
+			n, err = io.CopyN(pw, s.Conn, int64(header.length))
 			s.ack += uint32(header.length)
 		} else {
 			_, err = io.CopyN(ioutil.Discard, s.Conn, int64(header.length))
@@ -124,6 +125,11 @@ func (s *SnowflakeConn) readLoop(pw *io.PipeWriter) {
 			s.sessionID = header.sessionID
 		}
 		s.lock.Unlock()
+
+		if n > 0 {
+			//send acknowledgement
+			s.sendAck()
+		}
 	}
 	pw.CloseWithError(err)
 }
@@ -186,9 +192,11 @@ func (c *SnowflakeConn) Write(b []byte) (n int, err error) {
 	//set a timer on the acknowledgement
 	sentSeq := c.seq
 	time.AfterFunc(c.timeout, func() {
+		c.lock.Lock()
 		if c.acked < sentSeq {
 			c.Close()
 		}
+		c.lock.Unlock()
 	})
 
 	return len(b), err

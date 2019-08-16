@@ -1,7 +1,6 @@
 package proto
 
 import (
-	"io"
 	"net"
 	"sync"
 	"testing"
@@ -46,11 +45,6 @@ func TestSnowflakeProto(t *testing.T) {
 			}()
 
 			wg.Wait()
-
-			// Check that acknowledgement packet was written
-			//n, err = s.Read(received)
-			//So(err, ShouldEqual, nil)
-			//So(n, ShouldEqual, 0)
 
 		})
 
@@ -163,10 +157,11 @@ func TestSnowflakeProto(t *testing.T) {
 			}()
 			wg.Wait()
 			wg.Add(1)
-			time.AfterFunc(10*time.Second, func() {
-				//check to see that connections are closed
+			time.AfterFunc(snowflakeTimeout, func() {
+				//check to see that connections are still open
 				_, err := c.Write(sent)
-				ctx.So(err, ShouldEqual, io.ErrClosedPipe)
+				ctx.So(err, ShouldEqual, nil)
+				ctx.So(c.acked, ShouldEqual, 5)
 				wg.Done()
 			})
 			wg.Wait()
