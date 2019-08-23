@@ -1,11 +1,17 @@
 /*
-We export metrics in the following format:
+We export metrics in the following (version 1.0) format:
 
     "snowflake-stats-end" YYYY-MM-DD HH:MM:SS (NSEC s) NL
-        [At most once.]
+        [At start, exactly once.]
 
         YYYY-MM-DD HH:MM:SS defines the end of the included measurement
         interval of length NSEC seconds (86400 seconds by default).
+
+    "@type snowflake-stats 1.0"
+        [Exactly once.]
+
+        Defines the version of snowflake stats output being used
+        (currently 1.0)
 
     "snowflake-ips" CC=NUM,CC=NUM,... NL
         [At most once.]
@@ -176,6 +182,7 @@ func (m *Metrics) logMetrics() {
 
 func (m *Metrics) printMetrics() {
 	m.logger.Println("snowflake-stats-end", time.Now().UTC().Format("2006-01-02 15:04:05"), fmt.Sprintf("(%d s)", int(metricsResolution.Seconds())))
+	m.logger.Println("@type snowflake-stats 1.0")
 	m.logger.Println("snowflake-ips", m.countryStats.Display())
 	m.logger.Println("snowflake-ips-total", len(m.countryStats.addrs))
 	m.logger.Println("snowflake-idle-count", binCount(m.proxyIdleCount))
