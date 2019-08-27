@@ -1,6 +1,7 @@
 package proto
 
 import (
+	"io"
 	"net"
 	"sync"
 	"testing"
@@ -164,6 +165,31 @@ func TestSnowflakeProto(t *testing.T) {
 				ctx.So(c.acked, ShouldEqual, 5)
 				wg.Done()
 			})
+			wg.Wait()
+		})
+
+		Convey("Check out-of-order sequence numbers", func(ctx C) {
+			var sent, received []byte
+			var wg sync.WaitGroup
+			sent = []byte{'H', 'E', 'L', 'L', 'O'}
+			received = make([]byte, len(sent), len(sent))
+			c.seq = 5
+
+			wg.Add(2)
+			go func() {
+				n, err := c.Write(sent)
+				ctx.So(err, ShouldEqual, nil)
+				ctx.So(n, ShouldEqual, len(sent))
+				ctx.So(c.seq, ShouldEqual, 10)
+				wg.Done()
+			}()
+			go func() {
+				n, err := s.Read(received)
+				ctx.So(err, ShouldEqual, io.EOF)
+				ctx.So(n, ShouldEqual, 0)
+				ctx.So(s.ack, ShouldEqual, 0)
+				wg.Done()
+			}()
 			wg.Wait()
 		})
 	})
