@@ -1,6 +1,7 @@
 package proto
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/binary"
 	"fmt"
@@ -77,16 +78,13 @@ type SnowflakeConn struct {
 
 	timeout time.Duration
 	acked   uint32
+	buf     bytes.Buffer
 }
 
-func NewSnowflakeConn(sConn net.Conn) *SnowflakeConn {
-	pr, pw := io.Pipe()
+func NewSnowflakeConn() *SnowflakeConn {
 	s := &SnowflakeConn{
-		Conn:    sConn,
-		pr:      pr,
 		timeout: snowflakeTimeout,
 	}
-	go s.readLoop(pw)
 	return s
 }
 
@@ -98,6 +96,27 @@ func (s *SnowflakeConn) genSessionID() error {
 	}
 	s.sessionID = buf
 	return nil
+}
+
+func (s *SnowflakeConn) NewSnowflake(conn io.ReadWriteCloser) error {
+	s.Conn = conn
+	pr, pw := io.Pipe()
+	s.pr = pr
+	go s.readLoop(pw)
+
+	//write out bytes in buffer
+	if s.buf.Len() > 0 {
+		s.lock.Lock()
+		s.seq = s.acked
+		_, err := s.Conn.Write(s.buf.Bytes())
+		s.lock.Unlock()
+		if err != nil {
+			return err
+		}
+		//TODO: check to make sure we wrote out all of the bytes
+	}
+	return nil
+
 }
 
 func (s *SnowflakeConn) readLoop(pw *io.PipeWriter) {
@@ -118,6 +137,8 @@ func (s *SnowflakeConn) readLoop(pw *io.PipeWriter) {
 			_, err = io.CopyN(ioutil.Discard, s.Conn, int64(header.length))
 		}
 		if header.ack > s.acked {
+			// remove newly acknowledged bytes from buffer
+			s.buf.Next(int(header.ack - s.acked))
 			s.acked = header.ack
 		}
 		//save session ID from client
@@ -136,6 +157,9 @@ func (s *SnowflakeConn) readLoop(pw *io.PipeWriter) {
 
 func (s *SnowflakeConn) Read(b []byte) (int, error) {
 	// read de-headered data from the pipe
+	if s.Conn == nil {
+		return 0, fmt.Errorf("No network connection to read from ")
+	}
 	return s.pr.Read(b)
 }
 
@@ -161,6 +185,9 @@ func (s *SnowflakeConn) sendAck() error {
 	return err
 }
 
+//Writes bytes to the underlying connection but saves them in a buffer first.
+//These bytes will remain in the buffer until they are acknowledged by the
+// other end of the connection.
 func (c *SnowflakeConn) Write(b []byte) (n int, err error) {
 
 	//need to append a header onto
@@ -183,10 +210,19 @@ func (c *SnowflakeConn) Write(b []byte) (n int, err error) {
 	bytes = append(bytes, b...)
 	c.seq += uint32(len(b))
 
+	//save bytes to buffer until the have been acked
+	c.lock.Lock()
+	c.buf.Write(b)
+	c.lock.Unlock()
+
+	if c.Conn == nil {
+		return len(b), fmt.Errorf("No network connection to write to.")
+	}
+
 	n, err2 := c.Conn.Write(bytes)
 	//prioritize underlying connection error
 	if err2 != nil {
-		err = err2
+		return len(b), err2
 	}
 
 	//set a timer on the acknowledgement

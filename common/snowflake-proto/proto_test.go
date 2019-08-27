@@ -15,8 +15,11 @@ func TestSnowflakeProto(t *testing.T) {
 
 		client, server := net.Pipe()
 
-		c := NewSnowflakeConn(client)
-		s := NewSnowflakeConn(server)
+		c := NewSnowflakeConn()
+		c.NewSnowflake(client)
+
+		s := NewSnowflakeConn()
+		s.NewSnowflake(server)
 
 		Convey("Create correct headers", func(ctx C) {
 			var sent, received []byte
@@ -159,10 +162,10 @@ func TestSnowflakeProto(t *testing.T) {
 			wg.Wait()
 			wg.Add(1)
 			time.AfterFunc(snowflakeTimeout, func() {
-				//check to see that connections are still open
-				_, err := c.Write(sent)
-				ctx.So(err, ShouldEqual, nil)
-				ctx.So(c.acked, ShouldEqual, 5)
+				//check to see that bytes were acknowledged
+				c.lock.Lock()
+				ctx.So(c.buf.Len(), ShouldEqual, 0)
+				c.lock.Unlock()
 				wg.Done()
 			})
 			wg.Wait()

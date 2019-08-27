@@ -46,8 +46,8 @@ func Handler(socks SocksConnector, snowflakes SnowflakeCollector) error {
 		socks.Close()
 	}()
 
-	// Use our snowflake protocol
-	sConn := &proto.SnowflakeConn{Conn: snowflake}
+	sConn := proto.NewSnowflakeConn()
+	sConn.NewSnowflake(snowflake)
 
 	// Begin exchanging data. Either WebRTC or localhost SOCKS will close first.
 	// In eithercase, this closes the handler and induces a new handler.
