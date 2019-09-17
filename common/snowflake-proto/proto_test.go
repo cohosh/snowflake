@@ -230,5 +230,72 @@ func TestSnowflakeProto(t *testing.T) {
 			})
 			wg.Wait()
 		})
+		Convey("Check that NewSnowflake sends buffered data", func(ctx C) {
+			var sent, received []byte
+			var wg sync.WaitGroup
+			sent = []byte{'H', 'E', 'L', 'L', 'O'}
+			received = make([]byte, len(sent), len(sent))
+			s.ack = 5 //simulate old snowflke not acknowledging data
+
+			wg.Add(2)
+			go func() {
+				n, err := c.Write(sent)
+				ctx.So(err, ShouldEqual, nil)
+				ctx.So(n, ShouldEqual, len(sent))
+				ctx.So(c.seq, ShouldEqual, 5)
+				wg.Done()
+			}()
+			go func() {
+				n, err := s.Read(received)
+				ctx.So(err, ShouldEqual, io.EOF)
+				ctx.So(n, ShouldEqual, 0)
+				ctx.So(s.ack, ShouldEqual, 5)
+				wg.Done()
+			}()
+			wg.Wait()
+
+			wg.Add(1)
+			//Make sure bytes weren't acknowledged
+			time.AfterFunc(snowflakeTimeout, func() {
+				//check to see that bytes were acknowledged
+				c.lock.Lock()
+				ctx.So(c.acked, ShouldEqual, 0)
+				ctx.So(c.buf.Len(), ShouldEqual, 5)
+				c.lock.Unlock()
+				wg.Done()
+			})
+			wg.Wait()
+
+			//Now call NewSnowflake
+			client, server = net.Pipe()
+			s.NewSnowflake(server)
+			s.ack = 0
+
+			wg.Add(2)
+			go func() {
+				c.NewSnowflake(client)
+				ctx.So(c.seq, ShouldEqual, 5)
+				wg.Done()
+			}()
+			go func() {
+				n, err := s.Read(received)
+				ctx.So(err, ShouldEqual, nil)
+				ctx.So(n, ShouldEqual, 5)
+				wg.Done()
+			}()
+			wg.Wait()
+
+			wg.Add(1)
+			time.AfterFunc(snowflakeTimeout, func() {
+				//check to see that bytes were acknowledged
+				c.lock.Lock()
+				ctx.So(s.ack, ShouldEqual, 5)
+				ctx.So(c.acked, ShouldEqual, 5)
+				ctx.So(c.buf.Len(), ShouldEqual, 0)
+				c.lock.Unlock()
+				wg.Done()
+			})
+			wg.Wait()
+		})
 	})
 }

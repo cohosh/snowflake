@@ -154,8 +154,8 @@ func (s *SnowflakeConn) NewSnowflake(conn io.ReadWriteCloser) error {
 	if s.buf.Len() > 0 {
 		s.lock.Lock()
 		s.seq = s.acked
-		_, err := s.conn.Write(s.buf.Bytes())
 		s.lock.Unlock()
+		_, err := s.Write(s.buf.Next(s.buf.Len()))
 		if err != nil {
 			return err
 		}
