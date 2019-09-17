@@ -107,7 +107,7 @@ type SnowflakeConn struct {
 	ack       uint32
 	sessionID []byte
 
-	Conn io.ReadWriteCloser
+	conn io.ReadWriteCloser
 	pr   *io.PipeReader
 	lock sync.Mutex //need a lock on the acknowledgement since multiple goroutines access it
 
@@ -134,7 +134,7 @@ func (s *SnowflakeConn) genSessionID() error {
 }
 
 func (s *SnowflakeConn) NewSnowflake(conn io.ReadWriteCloser) error {
-	s.Conn = conn
+	s.conn = conn
 	pr, pw := io.Pipe()
 	s.pr = pr
 	go s.readLoop(pw)
@@ -143,7 +143,7 @@ func (s *SnowflakeConn) NewSnowflake(conn io.ReadWriteCloser) error {
 	if s.buf.Len() > 0 {
 		s.lock.Lock()
 		s.seq = s.acked
-		_, err := s.Conn.Write(s.buf.Bytes())
+		_, err := s.conn.Write(s.buf.Bytes())
 		s.lock.Unlock()
 		if err != nil {
 			return err
@@ -160,16 +160,16 @@ func (s *SnowflakeConn) readLoop(pw *io.PipeWriter) {
 		// strip headers and write data into the pipe
 		var header snowflakeHeader
 		var n int64
-		err = readHeader(s.Conn, &header)
+		err = readHeader(s.conn, &header)
 		if err != nil {
 			break
 		}
 		s.lock.Lock()
 		if header.seq == s.ack {
-			n, err = io.CopyN(pw, s.Conn, int64(header.length))
+			n, err = io.CopyN(pw, s.conn, int64(header.length))
 			s.ack += uint32(header.length)
 		} else {
-			_, err = io.CopyN(ioutil.Discard, s.Conn, int64(header.length))
+			_, err = io.CopyN(ioutil.Discard, s.conn, int64(header.length))
 		}
 		if header.ack > s.acked {
 			// remove newly acknowledged bytes from buffer
@@ -192,7 +192,7 @@ func (s *SnowflakeConn) readLoop(pw *io.PipeWriter) {
 
 func (s *SnowflakeConn) Read(b []byte) (int, error) {
 	// read de-headered data from the pipe
-	if s.Conn == nil {
+	if s.conn == nil {
 		return 0, fmt.Errorf("No network connection to read from ")
 	}
 	return s.pr.Read(b)
@@ -215,7 +215,7 @@ func (s *SnowflakeConn) sendAck() error {
 	if len(bytes) != snowflakeHeaderLen {
 		return fmt.Errorf("Error crafting acknowledgment packet")
 	}
-	s.Conn.Write(bytes)
+	s.conn.Write(bytes)
 
 	return err
 }
@@ -250,11 +250,11 @@ func (c *SnowflakeConn) Write(b []byte) (n int, err error) {
 	c.buf.Write(b)
 	c.lock.Unlock()
 
-	if c.Conn == nil {
+	if c.conn == nil {
 		return len(b), fmt.Errorf("No network connection to write to.")
 	}
 
-	n, err2 := c.Conn.Write(bytes)
+	n, err2 := c.conn.Write(bytes)
 	//prioritize underlying connection error
 	if err2 != nil {
 		return len(b), err2
@@ -275,7 +275,7 @@ func (c *SnowflakeConn) Write(b []byte) (n int, err error) {
 }
 
 func (c *SnowflakeConn) Close() error {
-	return c.Conn.Close()
+	return c.conn.Close()
 }
 
 func (c *SnowflakeConn) LocalAddr() net.Addr {
