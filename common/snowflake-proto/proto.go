@@ -223,7 +223,7 @@ func (s *SnowflakeConn) sendAck() error {
 //Writes bytes to the underlying connection but saves them in a buffer first.
 //These bytes will remain in the buffer until they are acknowledged by the
 // other end of the connection.
-func (c *SnowflakeConn) Write(b []byte) (n int, err error) {
+func (s *SnowflakeConn) Write(b []byte) (n int, err error) {
 
 	//need to append a header onto
 	h := new(snowflakeHeader)
@@ -233,67 +233,67 @@ func (c *SnowflakeConn) Write(b []byte) (n int, err error) {
 	} else {
 		h.length = uint16(len(b))
 	}
-	h.seq = c.seq
-	c.lock.Lock()
-	h.ack = c.ack
-	c.lock.Unlock()
+	h.seq = s.seq
+	s.lock.Lock()
+	h.ack = s.ack
+	s.lock.Unlock()
 
 	bytes, err := h.Marshal()
 	if err != nil {
 		return 0, err
 	}
 	bytes = append(bytes, b...)
-	c.seq += uint32(len(b))
+	s.seq += uint32(len(b))
 
 	//save bytes to buffer until the have been acked
-	c.lock.Lock()
-	c.buf.Write(b)
-	c.lock.Unlock()
+	s.lock.Lock()
+	s.buf.Write(b)
+	s.lock.Unlock()
 
-	if c.conn == nil {
+	if s.conn == nil {
 		return len(b), fmt.Errorf("No network connection to write to.")
 	}
 
-	n, err2 := c.conn.Write(bytes)
+	n, err2 := s.conn.Write(bytes)
 	//prioritize underlying connection error
 	if err2 != nil {
 		return len(b), err2
 	}
 
 	//set a timer on the acknowledgement
-	sentSeq := c.seq
-	time.AfterFunc(c.timeout, func() {
-		c.lock.Lock()
-		if c.acked < sentSeq {
-			c.Close()
+	sentSeq := s.seq
+	time.AfterFunc(s.timeout, func() {
+		s.lock.Lock()
+		if s.acked < sentSeq {
+			s.Close()
 		}
-		c.lock.Unlock()
+		s.lock.Unlock()
 	})
 
 	return len(b), err
 
 }
 
-func (c *SnowflakeConn) Close() error {
-	return c.conn.Close()
+func (s *SnowflakeConn) Close() error {
+	return s.conn.Close()
 }
 
-func (c *SnowflakeConn) LocalAddr() net.Addr {
+func (s *SnowflakeConn) LocalAddr() net.Addr {
 	return nil
 }
 
-func (c *SnowflakeConn) RemoteAddr() net.Addr {
+func (s *SnowflakeConn) RemoteAddr() net.Addr {
 	return nil
 }
 
-func (c *SnowflakeConn) SetDeadline(t time.Time) error {
+func (s *SnowflakeConn) SetDeadline(t time.Time) error {
 	return fmt.Errorf("SetDeadline not implemented")
 }
 
-func (c *SnowflakeConn) SetReadDeadline(t time.Time) error {
+func (s *SnowflakeConn) SetReadDeadline(t time.Time) error {
 	return fmt.Errorf("SetReadDeadline not implemented")
 }
 
-func (c *SnowflakeConn) SetWriteDeadline(t time.Time) error {
+func (s *SnowflakeConn) SetWriteDeadline(t time.Time) error {
 	return fmt.Errorf("SetWriteDeadline not implemented")
 }
