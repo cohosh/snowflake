@@ -166,7 +166,6 @@ func (s *SnowflakeConn) NewSnowflake(conn io.ReadWriteCloser) error {
 		if err != nil {
 			return err
 		}
-		//TODO: check to make sure we wrote out all of the bytes
 	}
 	return nil
 
@@ -216,9 +215,6 @@ func (s *SnowflakeConn) readLoop(pw *io.PipeWriter) {
 
 func (s *SnowflakeConn) Read(b []byte) (int, error) {
 	// read de-headered data from the pipe
-	if s.conn == nil {
-		return 0, fmt.Errorf("No network connection to read from ")
-	}
 	return s.pr.Read(b)
 }
 
