@@ -1,3 +1,38 @@
+/* Snowflake client--server protocol
+
+   This package implements SnowflakeConn, a net.Conn for use between a Snowflake
+   client and server that implements a sequence and reliable Snowflake protocol.
+
+   The protocol sends data in chunks, accompanied by a header:
+   0               4               8
+   +---------------+---------------+
+   | Seq Number    | Ack Number    |
+   +-------+-------+---------------+
+   | Len   | sID                   |
+   +-------+-----------------------+
+   | sID   |
+   +-------+
+
+   With a 4 byte sequence number, a 4 byte acknowledgement number, a
+   2 byte length, and an 8 byte session ID.
+
+   Each SnowflakeConn is initialized with a call to NewSnowflakeConn() and
+   an underlying connection is set with the call NewSnowflake(). Since Snowflakes
+   are ephemeral, a new snowflake can be set at any time.
+
+   This net.Conn is reliable, so any bytes sent as a call to SnowflakeConn's Write
+   method will be buffered until they are acknowledged by the other end. If a new
+   snowflake is provided, buffered bytes will be resent through the new connection
+   and remain buffered until they are acknowledged.
+
+   When a SnowflakeConn reads in bytes, it automatically sends an empty
+   acknowledgement packet to the other end of the connection with the Ack number
+   updated to reflect the most recently received data. Only when an endpoint
+   receives a packet with an updated acknowledgement number will it remove that
+   data from the stored buffer.
+
+*/
+
 package proto
 
 import (
