@@ -2,6 +2,7 @@ package proto
 
 import (
 	"io"
+	"math"
 	"net"
 	"sync"
 	"testing"
@@ -193,6 +194,40 @@ func TestSnowflakeProto(t *testing.T) {
 				ctx.So(s.ack, ShouldEqual, 0)
 				wg.Done()
 			}()
+			wg.Wait()
+		})
+		Convey("Check sequence number overflow", func(ctx C) {
+			var sent, received []byte
+			var wg sync.WaitGroup
+			sent = []byte{'H', 'E', 'L', 'L', 'O'}
+			received = make([]byte, len(sent), len(sent))
+			c.seq = math.MaxUint32 - 2
+			s.ack = math.MaxUint32 - 2
+			c.acked = math.MaxUint32 - 2
+
+			wg.Add(2)
+			go func() {
+				n, err := c.Write(sent)
+				ctx.So(n, ShouldEqual, len(sent))
+				ctx.So(err, ShouldEqual, nil)
+				ctx.So(c.seq, ShouldEqual, 2)
+				wg.Done()
+			}()
+			go func() {
+				s.Read(received)
+				wg.Done()
+			}()
+			wg.Wait()
+			wg.Add(1)
+			time.AfterFunc(snowflakeTimeout, func() {
+				//check to see that bytes were acknowledged
+				c.lock.Lock()
+				ctx.So(s.ack, ShouldEqual, 2)
+				ctx.So(c.acked, ShouldEqual, 2)
+				ctx.So(c.buf.Len(), ShouldEqual, 0)
+				c.lock.Unlock()
+				wg.Done()
+			})
 			wg.Wait()
 		})
 	})

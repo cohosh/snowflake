@@ -182,9 +182,9 @@ func (s *SnowflakeConn) readLoop(pw *io.PipeWriter) {
 		} else {
 			_, err = io.CopyN(ioutil.Discard, s.conn, int64(header.length))
 		}
-		if header.ack > s.acked {
+		if int32(header.ack-s.acked) > 0 {
 			// remove newly acknowledged bytes from buffer
-			s.buf.Next(int(header.ack - s.acked))
+			s.buf.Next(int(int32(header.ack - s.acked)))
 			s.acked = header.ack
 		}
 		//save session ID from client
