@@ -91,7 +91,7 @@ func readHeader(r io.Reader, h *snowflakeHeader) error {
 
 	b := make([]byte, snowflakeHeaderLen, snowflakeHeaderLen)
 
-	_, err := io.ReadAtLeast(r, b, snowflakeHeaderLen)
+	_, err := io.ReadFull(r, b)
 	if err != nil {
 		return err
 	}
