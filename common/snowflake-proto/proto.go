@@ -47,8 +47,6 @@ import (
 	"time"
 )
 
-// Fixed size window used for sequencing and reliability layer
-const windowSize = 1500
 const snowflakeHeaderLen = 18
 const maxLength = 65535
 const sessionIDLength = 8
