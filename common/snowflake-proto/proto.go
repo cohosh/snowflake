@@ -118,9 +118,10 @@ type SnowflakeConn struct {
 	ack       uint32
 	sessionID SessionAddr
 
-	conn io.ReadWriteCloser
-	pr   *io.PipeReader
-	lock sync.Mutex //need a lock on the acknowledgement since multiple goroutines access it
+	conn     io.ReadWriteCloser
+	pr       *io.PipeReader
+	seqLock  sync.Mutex //lock for the seq and ack numbers
+	connLock sync.Mutex //lock for the underlying connection
 
 	timeout time.Duration
 	acked   uint32
@@ -145,16 +146,22 @@ func (s *SnowflakeConn) genSessionID() error {
 }
 
 func (s *SnowflakeConn) NewSnowflake(conn io.ReadWriteCloser) error {
+
+	s.connLock.Lock()
+	if s.conn != nil {
+		s.conn.Close()
+	}
 	s.conn = conn
+	s.connLock.Unlock()
 	pr, pw := io.Pipe()
 	s.pr = pr
 	go s.readLoop(pw)
 
 	//write out bytes in buffer
 	if s.buf.Len() > 0 {
-		s.lock.Lock()
+		s.seqLock.Lock()
 		s.seq = s.acked
-		s.lock.Unlock()
+		s.seqLock.Unlock()
 		_, err := s.Write(s.buf.Next(s.buf.Len()))
 		if err != nil {
 			return err
@@ -171,16 +178,22 @@ func (s *SnowflakeConn) readLoop(pw *io.PipeWriter) {
 		// strip headers and write data into the pipe
 		var header snowflakeHeader
 		var n int64
+		s.connLock.Lock()
 		err = readHeader(s.conn, &header)
+		s.connLock.Unlock()
 		if err != nil {
 			break
 		}
-		s.lock.Lock()
+		s.seqLock.Lock()
 		if header.seq == s.ack {
+			s.connLock.Lock()
 			n, err = io.CopyN(pw, s.conn, int64(header.length))
 			s.ack += uint32(header.length)
+			s.connLock.Unlock()
 		} else {
+			s.connLock.Lock()
 			_, err = io.CopyN(ioutil.Discard, s.conn, int64(header.length))
+			s.connLock.Unlock()
 		}
 		if int32(header.ack-s.acked) > 0 {
 			// remove newly acknowledged bytes from buffer
@@ -191,7 +204,7 @@ func (s *SnowflakeConn) readLoop(pw *io.PipeWriter) {
 		if s.sessionID == nil {
 			s.sessionID = header.sessionID
 		}
-		s.lock.Unlock()
+		s.seqLock.Unlock()
 
 		if n > 0 {
 			//send acknowledgement
@@ -214,9 +227,9 @@ func (s *SnowflakeConn) sendAck() error {
 	h := new(snowflakeHeader)
 	h.length = 0
 	h.seq = s.seq
-	s.lock.Lock()
+	s.seqLock.Lock()
 	h.ack = s.ack
-	s.lock.Unlock()
+	s.seqLock.Unlock()
 
 	bytes, err := h.Marshal()
 	if err != nil {
@@ -245,9 +258,9 @@ func (s *SnowflakeConn) Write(b []byte) (n int, err error) {
 		h.length = uint16(len(b))
 	}
 	h.seq = s.seq
-	s.lock.Lock()
+	s.seqLock.Lock()
 	h.ack = s.ack
-	s.lock.Unlock()
+	s.seqLock.Unlock()
 
 	bytes, err := h.Marshal()
 	if err != nil {
@@ -257,9 +270,9 @@ func (s *SnowflakeConn) Write(b []byte) (n int, err error) {
 	s.seq += uint32(len(b))
 
 	//save bytes to buffer until the have been acked
-	s.lock.Lock()
+	s.seqLock.Lock()
 	s.buf.Write(b)
-	s.lock.Unlock()
+	s.seqLock.Unlock()
 
 	if s.conn == nil {
 		return len(b), fmt.Errorf("No network connection to write to.")
@@ -274,11 +287,11 @@ func (s *SnowflakeConn) Write(b []byte) (n int, err error) {
 	//set a timer on the acknowledgement
 	sentSeq := s.seq
 	time.AfterFunc(s.timeout, func() {
-		s.lock.Lock()
+		s.seqLock.Lock()
 		if s.acked < sentSeq {
 			s.Close()
 		}
-		s.lock.Unlock()
+		s.seqLock.Unlock()
 	})
 
 	return len(b), err

@@ -43,9 +43,9 @@ func TestSnowflakeProto(t *testing.T) {
 				ctx.So(err, ShouldEqual, nil)
 				ctx.So(n, ShouldEqual, len(sent))
 				ctx.So(received[:n], ShouldResemble, sent)
-				s.lock.Lock()
+				s.seqLock.Lock()
 				ctx.So(s.ack, ShouldEqual, 5)
-				s.lock.Unlock()
+				s.seqLock.Unlock()
 				wg.Done()
 			}()
 
@@ -82,9 +82,9 @@ func TestSnowflakeProto(t *testing.T) {
 				ctx.So(n2, ShouldEqual, 2)
 				ctx.So(received[:n2], ShouldResemble, sent[n:n+n2])
 
-				s.lock.Lock()
+				s.seqLock.Lock()
 				ctx.So(s.ack, ShouldEqual, 5)
-				s.lock.Unlock()
+				s.seqLock.Unlock()
 				wg.Done()
 			}()
 
@@ -133,9 +133,9 @@ func TestSnowflakeProto(t *testing.T) {
 				ctx.So(n, ShouldEqual, 2)
 				ctx.So(buffer, ShouldResemble, append(sent, sent...))
 
-				s.lock.Lock()
+				s.seqLock.Lock()
 				ctx.So(s.ack, ShouldEqual, 2*5)
-				s.lock.Unlock()
+				s.seqLock.Unlock()
 				wg.Done()
 			}()
 			wg.Wait()
@@ -164,9 +164,9 @@ func TestSnowflakeProto(t *testing.T) {
 			wg.Add(1)
 			time.AfterFunc(snowflakeTimeout, func() {
 				//check to see that bytes were acknowledged
-				c.lock.Lock()
+				c.seqLock.Lock()
 				ctx.So(c.buf.Len(), ShouldEqual, 0)
-				c.lock.Unlock()
+				c.seqLock.Unlock()
 				wg.Done()
 			})
 			wg.Wait()
@@ -221,11 +221,11 @@ func TestSnowflakeProto(t *testing.T) {
 			wg.Add(1)
 			time.AfterFunc(snowflakeTimeout, func() {
 				//check to see that bytes were acknowledged
-				c.lock.Lock()
+				c.seqLock.Lock()
 				ctx.So(s.ack, ShouldEqual, 2)
 				ctx.So(c.acked, ShouldEqual, 2)
 				ctx.So(c.buf.Len(), ShouldEqual, 0)
-				c.lock.Unlock()
+				c.seqLock.Unlock()
 				wg.Done()
 			})
 			wg.Wait()
@@ -258,10 +258,10 @@ func TestSnowflakeProto(t *testing.T) {
 			//Make sure bytes weren't acknowledged
 			time.AfterFunc(snowflakeTimeout, func() {
 				//check to see that bytes were acknowledged
-				c.lock.Lock()
+				c.seqLock.Lock()
 				ctx.So(c.acked, ShouldEqual, 0)
 				ctx.So(c.buf.Len(), ShouldEqual, 5)
-				c.lock.Unlock()
+				c.seqLock.Unlock()
 				wg.Done()
 			})
 			wg.Wait()
@@ -288,11 +288,11 @@ func TestSnowflakeProto(t *testing.T) {
 			wg.Add(1)
 			time.AfterFunc(snowflakeTimeout, func() {
 				//check to see that bytes were acknowledged
-				c.lock.Lock()
+				c.seqLock.Lock()
 				ctx.So(s.ack, ShouldEqual, 5)
 				ctx.So(c.acked, ShouldEqual, 5)
 				ctx.So(c.buf.Len(), ShouldEqual, 0)
-				c.lock.Unlock()
+				c.seqLock.Unlock()
 				wg.Done()
 			})
 			wg.Wait()
