@@ -102,10 +102,21 @@ func readHeader(r io.Reader, h *snowflakeHeader) error {
 	return nil
 }
 
+// SessionAddr implements the net.Addr interface and is set to the snowflake
+//  sessionID by SnowflakeConn
+type SessionAddr []byte
+
+func (addr SessionAddr) Network() string {
+	return "session"
+}
+func (addr SessionAddr) String() string {
+	return string(addr)
+}
+
 type SnowflakeConn struct {
 	seq       uint32
 	ack       uint32
-	sessionID []byte
+	sessionID SessionAddr
 
 	conn io.ReadWriteCloser
 	pr   *io.PipeReader
@@ -279,11 +290,11 @@ func (s *SnowflakeConn) Close() error {
 }
 
 func (s *SnowflakeConn) LocalAddr() net.Addr {
-	return nil
+	return s.sessionID
 }
 
 func (s *SnowflakeConn) RemoteAddr() net.Addr {
-	return nil
+	return s.sessionID
 }
 
 func (s *SnowflakeConn) SetDeadline(t time.Time) error {
