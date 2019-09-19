@@ -17,10 +17,10 @@ func TestSnowflakeProto(t *testing.T) {
 		client, server := net.Pipe()
 
 		c := NewSnowflakeConn()
-		c.NewSnowflake(client)
+		c.NewSnowflake(client, nil)
 
 		s := NewSnowflakeConn()
-		s.NewSnowflake(server)
+		s.NewSnowflake(server, nil)
 
 		Convey("Create correct headers", func(ctx C) {
 			var sent, received []byte
@@ -268,12 +268,12 @@ func TestSnowflakeProto(t *testing.T) {
 
 			//Now call NewSnowflake
 			client, server = net.Pipe()
-			s.NewSnowflake(server)
+			s.NewSnowflake(server, nil)
 			s.ack = 0
 
 			wg.Add(2)
 			go func() {
-				c.NewSnowflake(client)
+				c.NewSnowflake(client, nil)
 				ctx.So(c.seq, ShouldEqual, 5)
 				wg.Done()
 			}()

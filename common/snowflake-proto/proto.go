@@ -114,7 +114,7 @@ func (addr SessionAddr) String() string {
 type SnowflakeConn struct {
 	seq       uint32
 	ack       uint32
-	sessionID SessionAddr
+	SessionID SessionAddr
 
 	conn      io.ReadWriteCloser
 	pr        *io.PipeReader
@@ -134,17 +134,27 @@ func NewSnowflakeConn() *SnowflakeConn {
 	return s
 }
 
-func (s *SnowflakeConn) genSessionID() error {
+func (s *SnowflakeConn) GenSessionID() error {
 	buf := make([]byte, sessionIDLength)
 	_, err := rand.Read(buf)
 	if err != nil {
 		return err
 	}
-	s.sessionID = buf
+	s.SessionID = buf
 	return nil
 }
 
-func (s *SnowflakeConn) NewSnowflake(conn io.ReadWriteCloser) error {
+//Peak at header from a connection and return SessionAddr
+func ReadSessionID(conn io.ReadWriteCloser) (SessionAddr, *snowflakeHeader, error) {
+	var header snowflakeHeader
+	if err := readHeader(conn, &header); err != nil {
+		return nil, nil, err
+	}
+
+	return header.sessionID, &header, nil
+}
+
+func (s *SnowflakeConn) NewSnowflake(conn io.ReadWriteCloser, header *snowflakeHeader) error {
 
 	s.connLock.Lock()
 	if s.conn != nil {
@@ -154,9 +164,14 @@ func (s *SnowflakeConn) NewSnowflake(conn io.ReadWriteCloser) error {
 	s.connLock.Unlock()
 	pr, pw := io.Pipe()
 	s.pr = pr
+
+	// If header is not nil, ready snowflake body
+	if header != nil {
+		s.readBody(*header, pw)
+	}
 	go s.readLoop(pw)
 
-	//write out bytes in buffer
+	// Write out bytes in buffer
 	if s.buf.Len() > 0 {
 		s.seqLock.Lock()
 		s.seq = s.acked
@@ -166,8 +181,41 @@ func (s *SnowflakeConn) NewSnowflake(conn io.ReadWriteCloser) error {
 			return err
 		}
 	}
+
 	return nil
 
+}
+
+func (s *SnowflakeConn) readBody(header snowflakeHeader, pw *io.PipeWriter) {
+	var n int64
+	s.seqLock.Lock()
+	if header.seq == s.ack {
+		s.connLock.Lock()
+		n, _ = io.CopyN(pw, s.conn, int64(header.length))
+		s.ack += uint32(header.length)
+		s.connLock.Unlock()
+	} else {
+		s.connLock.Lock()
+		io.CopyN(ioutil.Discard, s.conn, int64(header.length))
+		s.connLock.Unlock()
+	}
+	if int32(header.ack-s.acked) > 0 {
+		// remove newly acknowledged bytes from buffer
+		s.buf.Next(int(int32(header.ack - s.acked)))
+		s.acked = header.ack
+	}
+	//save session ID from client
+	if s.SessionID == nil {
+		s.SessionID = header.sessionID
+	}
+	s.seqLock.Unlock()
+
+	if n > 0 {
+		//send acknowledgement
+		go func() {
+			s.sendAck()
+		}()
+	}
 }
 
 func (s *SnowflakeConn) readLoop(pw *io.PipeWriter) {
@@ -175,41 +223,13 @@ func (s *SnowflakeConn) readLoop(pw *io.PipeWriter) {
 	for err == nil {
 		// strip headers and write data into the pipe
 		var header snowflakeHeader
-		var n int64
 		s.connLock.Lock()
 		err = readHeader(s.conn, &header)
 		s.connLock.Unlock()
 		if err != nil {
 			break
 		}
-		s.seqLock.Lock()
-		if header.seq == s.ack {
-			s.connLock.Lock()
-			n, err = io.CopyN(pw, s.conn, int64(header.length))
-			s.ack += uint32(header.length)
-			s.connLock.Unlock()
-		} else {
-			s.connLock.Lock()
-			_, err = io.CopyN(ioutil.Discard, s.conn, int64(header.length))
-			s.connLock.Unlock()
-		}
-		if int32(header.ack-s.acked) > 0 {
-			// remove newly acknowledged bytes from buffer
-			s.buf.Next(int(int32(header.ack - s.acked)))
-			s.acked = header.ack
-		}
-		//save session ID from client
-		if s.sessionID == nil {
-			s.sessionID = header.sessionID
-		}
-		s.seqLock.Unlock()
-
-		if n > 0 {
-			//send acknowledgement
-			go func() {
-				s.sendAck()
-			}()
-		}
+		s.readBody(header, pw)
 	}
 	pw.CloseWithError(err)
 }
@@ -307,11 +327,11 @@ func (s *SnowflakeConn) Close() error {
 }
 
 func (s *SnowflakeConn) LocalAddr() net.Addr {
-	return s.sessionID
+	return s.SessionID
 }
 
 func (s *SnowflakeConn) RemoteAddr() net.Addr {
-	return s.sessionID
+	return s.SessionID
 }
 
 func (s *SnowflakeConn) SetDeadline(t time.Time) error {

@@ -22,36 +22,41 @@ var HandlerChan = make(chan int)
 // Given an accepted SOCKS connection, establish a WebRTC connection to the
 // remote peer and exchange traffic.
 func Handler(socks SocksConnector, snowflakes SnowflakeCollector) error {
+	var err error
 	HandlerChan <- 1
 	defer func() {
 		HandlerChan <- -1
 	}()
-	// Obtain an available WebRTC remote. May block.
-	snowflake := snowflakes.Pop()
-	if nil == snowflake {
-		socks.Reject()
-		return errors.New("handler: Received invalid Snowflake")
-	}
 	defer socks.Close()
-	defer snowflake.Close()
-	log.Println("---- Handler: snowflake assigned ----")
-	err := socks.Grant(&net.TCPAddr{IP: net.IPv4zero, Port: 0})
-	if err != nil {
-		return err
-	}
-
-	go func() {
-		// When WebRTC resets, close the SOCKS connection too.
-		snowflake.WaitForReset()
-		socks.Close()
-	}()
-
 	sConn := proto.NewSnowflakeConn()
-	sConn.NewSnowflake(snowflake)
+	sConn.GenSessionID()
 
-	// Begin exchanging data. Either WebRTC or localhost SOCKS will close first.
-	// In eithercase, this closes the handler and induces a new handler.
-	copyLoop(socks, sConn)
+	for err == nil {
+		// Obtain an available WebRTC remote. May block.
+		snowflake := snowflakes.Pop()
+		if nil == snowflake {
+			return errors.New("handler: Received invalid Snowflake")
+		}
+		log.Println("---- Handler: snowflake assigned ----")
+		err := socks.Grant(&net.TCPAddr{IP: net.IPv4zero, Port: 0})
+		if err != nil {
+			return err
+		}
+
+		go func() {
+			// When WebRTC resets, close the SOCKS connection too.
+			snowflake.WaitForReset()
+			socks.Close()
+		}()
+
+		sConn.NewSnowflake(snowflake, nil)
+
+		// Begin exchanging data. Either WebRTC or localhost SOCKS will close first.
+		// In eithercase, this closes the handler and induces a new handler.
+		copyLoop(socks, sConn)
+		log.Println("---- Copy Loop ened, snowflake closed ---")
+		snowflake.Close()
+	}
 	log.Println("---- Handler: closed ---")
 	return nil
 }

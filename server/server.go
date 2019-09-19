@@ -39,6 +39,14 @@ const listenAndServeErrorTimeout = 100 * time.Millisecond
 
 var ptInfo pt.ServerInfo
 
+// Map of open E2E snowflake connections with client
+var flurries map[string]*Flurry
+
+type Flurry struct {
+	conn *proto.SnowflakeConn
+	or   *net.TCPConn
+}
+
 // When a connection handler starts, +1 is written to this channel; when it
 // ends, -1 is written.
 var handlerChan = make(chan int)
@@ -109,24 +117,30 @@ func newWebSocketConn(ws *websocket.WebSocket) webSocketConn {
 }
 
 // Copy from WebSocket to socket and vice versa.
-func proxy(local *net.TCPConn, conn io.ReadWriteCloser) {
+func proxy(local *net.TCPConn, conn *proto.SnowflakeConn) {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
 	go func() {
 		_, err := io.Copy(conn, local)
 		if err != nil {
-			log.Printf("error copying ORPort to WebSocket")
+			log.Printf("error copying ORPort to WebSocket (%s)", err.Error())
+			// Error, remove flurry
+			delete(flurries, string(conn.SessionID))
+			local.CloseRead()
 		}
-		local.CloseRead()
+
 		conn.Close()
 		wg.Done()
 	}()
 	go func() {
 		_, err := io.Copy(local, conn)
 		if err != nil {
-			log.Printf("error copying WebSocket to ORPort")
+			log.Printf("error copying WebSocket to ORPort (%s)", err.Error())
 		}
+
+		// Error or reached EOF from OR port, remove flurry
+		delete(flurries, string(conn.SessionID))
 		local.CloseWrite()
 		conn.Close()
 		wg.Done()
@@ -160,26 +174,38 @@ func webSocketHandler(ws *websocket.WebSocket) {
 		handlerChan <- -1
 	}()
 
-	// Pass the address of client as the remote address of incoming connection
-	clientIPParam := ws.Request().URL.Query().Get("client_ip")
-	addr := clientAddr(clientIPParam)
-	if addr == "" {
-		statsChannel <- false
-	} else {
-		statsChannel <- true
-	}
-	or, err := pt.DialOr(&ptInfo, addr, ptMethodName)
-
+	// Find out if this connection corresponds to an open SnowflakeConn
+	sid, header, err := proto.ReadSessionID(&conn)
 	if err != nil {
-		log.Printf("failed to connect to ORPort: %s", err)
 		return
 	}
-	defer or.Close()
 
-	sConn := proto.NewSnowflakeConn()
-	sConn.NewSnowflake(&conn)
+	flurry := flurries[string(sid)]
+	if flurry == nil {
 
-	proxy(or, sConn)
+		// Pass the address of client as the remote address of incoming connection
+		clientIPParam := ws.Request().URL.Query().Get("client_ip")
+		addr := clientAddr(clientIPParam)
+		if addr == "" {
+			statsChannel <- false
+		} else {
+			statsChannel <- true
+		}
+		or, err := pt.DialOr(&ptInfo, addr, ptMethodName)
+
+		if err != nil {
+			log.Printf("failed to connect to ORPort: %s", err)
+			return
+		}
+		defer or.Close()
+
+		sConn := proto.NewSnowflakeConn()
+		flurry = &Flurry{conn: sConn, or: or}
+		flurries[string(sid)] = flurry
+	}
+
+	flurry.conn.NewSnowflake(&conn, header)
+	proxy(flurry.or, flurry.conn)
 }
 
 func initServer(addr *net.TCPAddr,
@@ -296,6 +322,9 @@ func main() {
 		log.Fatal("the --acme-hostnames option is required")
 	}
 	acmeHostnames := strings.Split(acmeHostnamesCommas, ",")
+
+	// Initialize flury
+	flurries = make(map[string]*Flurry)
 
 	log.Printf("starting")
 	var err error
