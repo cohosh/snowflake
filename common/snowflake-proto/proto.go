@@ -116,10 +116,11 @@ type SnowflakeConn struct {
 	ack       uint32
 	sessionID SessionAddr
 
-	conn     io.ReadWriteCloser
-	pr       *io.PipeReader
-	seqLock  sync.Mutex //lock for the seq and ack numbers
-	connLock sync.Mutex //lock for the underlying connection
+	conn      io.ReadWriteCloser
+	pr        *io.PipeReader
+	seqLock   sync.Mutex //lock for the seq and ack numbers
+	connLock  sync.Mutex //lock for the underlying connection
+	writeLock sync.Mutex //lock for writing to connection
 
 	timeout time.Duration
 	acked   uint32
@@ -205,7 +206,9 @@ func (s *SnowflakeConn) readLoop(pw *io.PipeWriter) {
 
 		if n > 0 {
 			//send acknowledgement
-			s.sendAck()
+			go func() {
+				s.sendAck()
+			}()
 		}
 	}
 	pw.CloseWithError(err)
@@ -233,7 +236,12 @@ func (s *SnowflakeConn) sendAck() error {
 	if len(bytes) != snowflakeHeaderLen {
 		return fmt.Errorf("Error crafting acknowledgment packet")
 	}
-	s.conn.Write(bytes)
+	s.writeLock.Lock()
+	_, err = s.conn.Write(bytes)
+	if err != nil {
+		return err
+	}
+	s.writeLock.Unlock()
 
 	return err
 }
@@ -272,7 +280,9 @@ func (s *SnowflakeConn) Write(b []byte) (n int, err error) {
 		return len(b), fmt.Errorf("No network connection to write to.")
 	}
 
+	s.writeLock.Lock()
 	n, err2 := s.conn.Write(bytes)
+	s.writeLock.Unlock()
 	//prioritize underlying connection error
 	if err2 != nil {
 		return len(b), err2
