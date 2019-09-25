@@ -42,6 +42,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"net"
 	"sync"
 	"time"
@@ -134,6 +135,11 @@ func NewSnowflakeConn() *SnowflakeConn {
 	return s
 }
 
+func SetLog(w io.Writer) {
+	log.SetFlags(log.LstdFlags | log.LUTC)
+	log.SetOutput(w)
+}
+
 func (s *SnowflakeConn) GenSessionID() error {
 	buf := make([]byte, sessionIDLength)
 	_, err := rand.Read(buf)
@@ -165,14 +171,16 @@ func (s *SnowflakeConn) NewSnowflake(conn io.ReadWriteCloser, header *snowflakeH
 	pr, pw := io.Pipe()
 	s.pr = pr
 
-	// If header is not nil, ready snowflake body
+	// If header is not nil, read snowflake body
 	if header != nil {
-		s.readBody(*header, pw)
+		go s.readLoop(pw, header)
+	} else {
+		go s.readLoop(pw, nil)
 	}
-	go s.readLoop(pw)
 
 	// Write out bytes in buffer
 	if s.buf.Len() > 0 {
+		log.Println("Resending bytes from buffer ", s.buf.Len())
 		s.seqLock.Lock()
 		s.seq = s.acked
 		s.seqLock.Unlock()
@@ -188,16 +196,23 @@ func (s *SnowflakeConn) NewSnowflake(conn io.ReadWriteCloser, header *snowflakeH
 
 func (s *SnowflakeConn) readBody(header snowflakeHeader, pw *io.PipeWriter) {
 	var n int64
+	var err error
 	s.seqLock.Lock()
 	if header.seq == s.ack {
 		s.connLock.Lock()
-		n, _ = io.CopyN(pw, s.conn, int64(header.length))
-		s.ack += uint32(header.length)
+		n, err = io.CopyN(pw, s.conn, int64(header.length))
 		s.connLock.Unlock()
+		if err != nil {
+			log.Printf("Error copying bytes from WebRTC connection to pipe: %s", err.Error())
+		}
+		s.ack += uint32(header.length)
 	} else {
 		s.connLock.Lock()
-		io.CopyN(ioutil.Discard, s.conn, int64(header.length))
+		_, err = io.CopyN(ioutil.Discard, s.conn, int64(header.length))
 		s.connLock.Unlock()
+		if err != nil {
+			log.Printf("Error discarding bytes from WebRTC connection to pipe: %s", err.Error())
+		}
 	}
 	if int32(header.ack-s.acked) > 0 {
 		// remove newly acknowledged bytes from buffer
@@ -213,20 +228,26 @@ func (s *SnowflakeConn) readBody(header snowflakeHeader, pw *io.PipeWriter) {
 	if n > 0 {
 		//send acknowledgement
 		go func() {
-			s.sendAck()
+			if err := s.sendAck(); err != nil {
+				log.Printf("Error sending acknowledgement")
+			}
 		}()
 	}
 }
 
-func (s *SnowflakeConn) readLoop(pw *io.PipeWriter) {
+func (s *SnowflakeConn) readLoop(pw *io.PipeWriter, hdr *snowflakeHeader) {
 	var err error
+
+	if hdr != nil {
+		//already read in header to get session ID
+		s.readBody(*hdr, pw)
+	}
 	for err == nil {
 		// strip headers and write data into the pipe
 		var header snowflakeHeader
-		s.connLock.Lock()
 		err = readHeader(s.conn, &header)
-		s.connLock.Unlock()
 		if err != nil {
+			log.Printf("Error reading header: %s", err.Error())
 			break
 		}
 		s.readBody(header, pw)
@@ -313,6 +334,7 @@ func (s *SnowflakeConn) Write(b []byte) (n int, err error) {
 	time.AfterFunc(s.timeout, func() {
 		s.seqLock.Lock()
 		if s.acked < sentSeq {
+			log.Println("Closing WebRTC connection, timed out waiting for ACK")
 			s.Close()
 		}
 		s.seqLock.Unlock()

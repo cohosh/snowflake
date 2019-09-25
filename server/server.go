@@ -174,11 +174,14 @@ func webSocketHandler(ws *websocket.WebSocket) {
 		handlerChan <- -1
 	}()
 
+	log.Printf("received new connection from snowflake")
+
 	// Find out if this connection corresponds to an open SnowflakeConn
 	sid, header, err := proto.ReadSessionID(&conn)
 	if err != nil {
 		return
 	}
+	log.Printf("read in session id: %s", string(sid))
 
 	flurry := flurries[string(sid)]
 	if flurry == nil {
@@ -316,7 +319,8 @@ func main() {
 		logOutput = f
 	}
 	//We want to send the log output through our scrubber first
-	log.SetOutput(&safelog.LogScrubber{Output: logOutput})
+	scrubber := &safelog.LogScrubber{Output: logOutput}
+	log.SetOutput(scrubber)
 
 	if !disableTLS && acmeHostnamesCommas == "" {
 		log.Fatal("the --acme-hostnames option is required")
@@ -325,6 +329,7 @@ func main() {
 
 	// Initialize flury
 	flurries = make(map[string]*Flurry)
+	proto.SetLog(scrubber)
 
 	log.Printf("starting")
 	var err error
