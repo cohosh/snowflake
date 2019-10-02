@@ -141,6 +141,21 @@ func TestSnowflakeProto(t *testing.T) {
 			wg.Wait()
 
 		})
+	})
+}
+func TestSnowflakeProtoTimeouts(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping timeout tests in short mode")
+	}
+	Convey("Connection set up", t, func(ctx C) {
+
+		client, server := net.Pipe()
+
+		c := NewSnowflakeConn()
+		c.NewSnowflake(client, nil)
+
+		s := NewSnowflakeConn()
+		s.NewSnowflake(server, nil)
 
 		Convey("Check timeout", func(ctx C) {
 			var sent, received []byte

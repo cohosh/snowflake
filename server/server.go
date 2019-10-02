@@ -16,7 +16,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
@@ -43,6 +42,7 @@ var ptInfo pt.ServerInfo
 var flurries map[string]*Flurry
 
 type Flurry struct {
+	id   string
 	conn *proto.SnowflakeConn
 	or   *net.TCPConn
 }
@@ -116,39 +116,6 @@ func newWebSocketConn(ws *websocket.WebSocket) webSocketConn {
 	return conn
 }
 
-// Copy from WebSocket to socket and vice versa.
-func proxy(local *net.TCPConn, conn *proto.SnowflakeConn) {
-	var wg sync.WaitGroup
-	wg.Add(2)
-
-	go func() {
-		_, err := io.Copy(conn, local)
-		if err != nil {
-			log.Printf("error copying ORPort to WebSocket (%s)", err.Error())
-			// Error, remove flurry
-			delete(flurries, string(conn.SessionID))
-			local.CloseRead()
-		}
-
-		conn.Close()
-		wg.Done()
-	}()
-	go func() {
-		_, err := io.Copy(local, conn)
-		if err != nil {
-			log.Printf("error copying WebSocket to ORPort (%s)", err.Error())
-		}
-
-		// Error or reached EOF from OR port, remove flurry
-		delete(flurries, string(conn.SessionID))
-		local.CloseWrite()
-		conn.Close()
-		wg.Done()
-	}()
-
-	wg.Wait()
-}
-
 // Return an address string suitable to pass into pt.DialOr.
 func clientAddr(clientIPParam string) string {
 	if clientIPParam == "" {
@@ -161,6 +128,14 @@ func clientAddr(clientIPParam string) string {
 	}
 	// Add a dummy port number. USERADDR requires a port number.
 	return (&net.TCPAddr{IP: clientIP, Port: 1, Zone: ""}).String()
+}
+
+func localProxy(flurry *Flurry) {
+	_, err := proto.Proxy(flurry.conn, flurry.or)
+	log.Printf("Closed connection to OR port for sid %s with error: %s", flurry.id, err.Error())
+	flurry.conn.Close()
+	flurry.or.Close()
+	delete(flurries, flurry.id)
 }
 
 func webSocketHandler(ws *websocket.WebSocket) {
@@ -181,7 +156,6 @@ func webSocketHandler(ws *websocket.WebSocket) {
 	if err != nil {
 		return
 	}
-	log.Printf("read in session id: %s", string(sid))
 
 	flurry := flurries[string(sid)]
 	if flurry == nil {
@@ -200,15 +174,22 @@ func webSocketHandler(ws *websocket.WebSocket) {
 			log.Printf("failed to connect to ORPort: %s", err)
 			return
 		}
-		defer or.Close()
 
 		sConn := proto.NewSnowflakeConn()
-		flurry = &Flurry{conn: sConn, or: or}
+		flurry = &Flurry{id: sid, conn: sConn, or: or}
 		flurries[string(sid)] = flurry
+
+		//start reading from OR port
+		go localProxy(flurry)
 	}
 
 	flurry.conn.NewSnowflake(&conn, header)
-	proxy(flurry.or, flurry.conn)
+	rclose, err := proto.Proxy(flurry.or, flurry.conn)
+	log.Printf("Closed connection to Snowflake")
+	if !rclose {
+		log.Printf("error writing to OR port: %s", err.Error())
+		flurry.or.Close()
+	}
 }
 
 func initServer(addr *net.TCPAddr,

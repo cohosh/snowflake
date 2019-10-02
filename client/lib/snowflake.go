@@ -22,7 +22,6 @@ var HandlerChan = make(chan int)
 // Given an accepted SOCKS connection, establish a WebRTC connection to the
 // remote peer and exchange traffic.
 func Handler(socks SocksConnector, snowflakes SnowflakeCollector) error {
-	var err error
 	HandlerChan <- 1
 	defer func() {
 		HandlerChan <- -1
@@ -31,7 +30,15 @@ func Handler(socks SocksConnector, snowflakes SnowflakeCollector) error {
 	sConn := proto.NewSnowflakeConn()
 	sConn.GenSessionID()
 
-	for err == nil {
+	// Continuously read from SOCKS connection
+	go func() {
+		_, err := proto.Proxy(sConn, socks)
+		log.Printf("Closed SOCKS connection with error: %s", err.Error())
+		socks.Close()
+		sConn.Close()
+	}()
+
+	for {
 		// Obtain an available WebRTC remote. May block.
 		snowflake := snowflakes.Pop()
 		if nil == snowflake {
@@ -54,29 +61,16 @@ func Handler(socks SocksConnector, snowflakes SnowflakeCollector) error {
 		// Begin exchanging data. Either WebRTC or localhost SOCKS will close first.
 		// In eithercase, this closes the handler and induces a new handler.
 		log.Println("---- Copy Loop started, snowflake opened ---")
-		copyLoop(socks, sConn)
+		rclose, err := proto.Proxy(socks, sConn)
 		log.Println("---- Copy Loop ended, snowflake closed ---")
+		if !rclose {
+			log.Printf("error writing to SOCKS connection: %s", err.Error())
+			socks.Close()
+			sConn.Close()
+			break
+		}
 		snowflake.Close()
 	}
 	log.Println("---- Handler: closed ---")
 	return nil
-}
-
-// Exchanges bytes between two ReadWriters.
-// (In this case, between a SOCKS and WebRTC connection.)
-func copyLoop(a, b io.ReadWriter) {
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() {
-		io.Copy(b, a)
-		log.Println("Stopping copying from socks to sConn")
-		wg.Done()
-	}()
-	go func() {
-		io.Copy(a, b)
-		log.Println("Stopping copying from sConn to socks")
-		wg.Done()
-	}()
-	wg.Wait()
-	log.Println("copy loop ended")
 }

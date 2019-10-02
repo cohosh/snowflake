@@ -38,12 +38,14 @@ package proto
 import (
 	"bytes"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/binary"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
 	"net"
+	"strings"
 	"sync"
 	"time"
 )
@@ -124,8 +126,10 @@ type SnowflakeConn struct {
 	writeLock sync.Mutex //lock for writing to connection
 
 	timeout time.Duration
-	acked   uint32
-	buf     bytes.Buffer
+	timers  []*time.Timer
+
+	acked uint32
+	buf   bytes.Buffer
 }
 
 func NewSnowflakeConn() *SnowflakeConn {
@@ -151,13 +155,13 @@ func (s *SnowflakeConn) GenSessionID() error {
 }
 
 //Peak at header from a connection and return SessionAddr
-func ReadSessionID(conn io.ReadWriteCloser) (SessionAddr, *snowflakeHeader, error) {
+func ReadSessionID(conn io.ReadWriteCloser) (string, *snowflakeHeader, error) {
 	var header snowflakeHeader
 	if err := readHeader(conn, &header); err != nil {
-		return nil, nil, err
+		return "", nil, err
 	}
 
-	return header.sessionID, &header, nil
+	return strings.TrimRight(base64.StdEncoding.EncodeToString(header.sessionID), "="), &header, nil
 }
 
 func (s *SnowflakeConn) NewSnowflake(conn io.ReadWriteCloser, header *snowflakeHeader) error {
@@ -268,6 +272,7 @@ func (s *SnowflakeConn) sendAck() error {
 	s.seqLock.Lock()
 	h.ack = s.ack
 	s.seqLock.Unlock()
+	h.sessionID = s.SessionID
 
 	bytes, err := h.Marshal()
 	if err != nil {
@@ -290,6 +295,7 @@ func (s *SnowflakeConn) sendAck() error {
 //Writes bytes to the underlying connection but saves them in a buffer first.
 //These bytes will remain in the buffer until they are acknowledged by the
 // other end of the connection.
+// Note: Write will not return an error if the underlying connection has been closed
 func (s *SnowflakeConn) Write(b []byte) (n int, err error) {
 
 	//need to append a header onto
@@ -304,6 +310,7 @@ func (s *SnowflakeConn) Write(b []byte) (n int, err error) {
 	s.seqLock.Lock()
 	h.ack = s.ack
 	s.seqLock.Unlock()
+	h.sessionID = s.SessionID
 
 	bytes, err := h.Marshal()
 	if err != nil {
@@ -318,20 +325,21 @@ func (s *SnowflakeConn) Write(b []byte) (n int, err error) {
 	s.seqLock.Unlock()
 
 	if s.conn == nil {
-		return len(b), fmt.Errorf("No network connection to write to.")
+		log.Printf("Buffering %d bytes, no connection yet.", len(b))
+		return len(b), nil
 	}
 
 	s.writeLock.Lock()
 	n, err2 := s.conn.Write(bytes)
 	s.writeLock.Unlock()
-	//prioritize underlying connection error
 	if err2 != nil {
-		return len(b), err2
+		log.Printf("Error writing to connection: %s", err.Error())
+		return len(b), nil
 	}
 
 	//set a timer on the acknowledgement
 	sentSeq := s.seq
-	time.AfterFunc(s.timeout, func() {
+	timer := time.AfterFunc(s.timeout, func() {
 		s.seqLock.Lock()
 		if s.acked < sentSeq {
 			log.Println("Closing WebRTC connection, timed out waiting for ACK")
@@ -339,13 +347,20 @@ func (s *SnowflakeConn) Write(b []byte) (n int, err error) {
 		}
 		s.seqLock.Unlock()
 	})
+	s.timers = append(s.timers, timer)
 
 	return len(b), err
 
 }
 
 func (s *SnowflakeConn) Close() error {
-	return s.conn.Close()
+	err := s.conn.Close()
+	//terminate all waiting timers
+	for _, timer := range s.timers {
+		timer.Stop()
+	}
+	s.timers = s.timers[:0]
+	return err
 }
 
 func (s *SnowflakeConn) LocalAddr() net.Addr {
@@ -366,4 +381,33 @@ func (s *SnowflakeConn) SetReadDeadline(t time.Time) error {
 
 func (s *SnowflakeConn) SetWriteDeadline(t time.Time) error {
 	return fmt.Errorf("SetWriteDeadline not implemented")
+}
+
+// Functions similarly to io.Copy, except return a bool with value
+// true if the call to src.Read caused the error and a value of false
+// if the call to dst.Write caused the error
+func Proxy(dst io.WriteCloser, src io.ReadCloser) (bool, error) {
+	buf := make([]byte, 32*1024)
+	var err error
+	var readClose bool
+	for {
+		nr, er := src.Read(buf)
+		if er != nil {
+			err = er
+			readClose = true
+			break
+		}
+		if nr > 0 {
+			nw, ew := dst.Write(buf[0:nr])
+			if ew != nil {
+				err = ew
+				break
+			}
+			if nw != nr {
+				err = io.ErrShortWrite
+				break
+			}
+		}
+	}
+	return readClose, err
 }
