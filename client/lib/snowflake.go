@@ -2,10 +2,11 @@ package lib
 
 import (
 	"errors"
-	"io"
 	"log"
 	"net"
 	"sync"
+
+	"git.torproject.org/pluggable-transports/snowflake.git/common/snowflake-proto"
 )
 
 const (
