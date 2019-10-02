@@ -4,7 +4,6 @@ import (
 	"errors"
 	"log"
 	"net"
-	"sync"
 
 	"git.torproject.org/pluggable-transports/snowflake.git/common/snowflake-proto"
 )
@@ -25,46 +24,51 @@ func Handler(socks SocksConnector, snowflakes SnowflakeCollector) error {
 	defer func() {
 		HandlerChan <- -1
 	}()
-	// Obtain an available WebRTC remote. May block.
-	snowflake := snowflakes.Pop()
-	if nil == snowflake {
-		socks.Reject()
-		return errors.New("handler: Received invalid Snowflake")
-	}
 	defer socks.Close()
-	defer snowflake.Close()
-	log.Println("---- Handler: snowflake assigned ----")
-	err := socks.Grant(&net.TCPAddr{IP: net.IPv4zero, Port: 0})
-	if err != nil {
-		return err
-	}
+	sConn := proto.NewSnowflakeConn()
+	sConn.GenSessionID()
 
+	// Continuously read from SOCKS connection
 	go func() {
-		// When WebRTC resets, close the SOCKS connection too.
-		snowflake.WaitForReset()
+		_, err := proto.Proxy(sConn, socks)
+		log.Printf("Closed SOCKS connection with error: %s", err.Error())
 		socks.Close()
+		sConn.Close()
 	}()
 
-	// Begin exchanging data. Either WebRTC or localhost SOCKS will close first.
-	// In eithercase, this closes the handler and induces a new handler.
-	copyLoop(socks, snowflake)
+	for {
+		// Obtain an available WebRTC remote. May block.
+		snowflake := snowflakes.Pop()
+		if nil == snowflake {
+			return errors.New("handler: Received invalid Snowflake")
+		}
+		log.Println("---- Handler: snowflake assigned ----")
+		err := socks.Grant(&net.TCPAddr{IP: net.IPv4zero, Port: 0})
+		if err != nil {
+			return err
+		}
+
+		go func() {
+			// When WebRTC resets, log message
+			snowflake.WaitForReset()
+			log.Println("Snowflake reset, gathering new snowflake")
+		}()
+
+		sConn.NewSnowflake(snowflake, nil)
+
+		// Begin exchanging data. Either WebRTC or localhost SOCKS will close first.
+		// In eithercase, this closes the handler and induces a new handler.
+		log.Println("---- Copy Loop started, snowflake opened ---")
+		rclose, err := proto.Proxy(socks, sConn)
+		log.Println("---- Copy Loop ended, snowflake closed ---")
+		if !rclose {
+			log.Printf("error writing to SOCKS connection: %s", err.Error())
+			socks.Close()
+			sConn.Close()
+			break
+		}
+		snowflake.Close()
+	}
 	log.Println("---- Handler: closed ---")
 	return nil
-}
-
-// Exchanges bytes between two ReadWriters.
-// (In this case, between a SOCKS and WebRTC connection.)
-func copyLoop(a, b io.ReadWriter) {
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() {
-		io.Copy(b, a)
-		wg.Done()
-	}()
-	go func() {
-		io.Copy(a, b)
-		wg.Done()
-	}()
-	wg.Wait()
-	log.Println("copy loop ended")
 }

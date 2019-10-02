@@ -145,6 +145,26 @@ func SetLog(w io.Writer) {
 	log.SetOutput(w)
 }
 
+func (s *SnowflakeConn) GenSessionID() error {
+	buf := make([]byte, sessionIDLength)
+	_, err := rand.Read(buf)
+	if err != nil {
+		return err
+	}
+	s.SessionID = buf
+	return nil
+}
+
+//Peak at header from a connection and return SessionAddr
+func ReadSessionID(conn io.ReadWriteCloser) (string, *snowflakeHeader, error) {
+	var header snowflakeHeader
+	if err := readHeader(conn, &header); err != nil {
+		return "", nil, err
+	}
+
+	return strings.TrimRight(base64.StdEncoding.EncodeToString(header.sessionID), "="), &header, nil
+}
+
 func (s *SnowflakeConn) NewSnowflake(conn io.ReadWriteCloser, header *snowflakeHeader) error {
 
 	s.connLock.Lock()
@@ -366,4 +386,33 @@ func (s *SnowflakeConn) SetReadDeadline(t time.Time) error {
 
 func (s *SnowflakeConn) SetWriteDeadline(t time.Time) error {
 	return fmt.Errorf("SetWriteDeadline not implemented")
+}
+
+// Functions similarly to io.Copy, except return a bool with value
+// true if the call to src.Read caused the error and a value of false
+// if the call to dst.Write caused the error
+func Proxy(dst io.WriteCloser, src io.ReadCloser) (bool, error) {
+	buf := make([]byte, 32*1024)
+	var err error
+	var readClose bool
+	for {
+		nr, er := src.Read(buf)
+		if er != nil {
+			err = er
+			readClose = true
+			break
+		}
+		if nr > 0 {
+			nw, ew := dst.Write(buf[0:nr])
+			if ew != nil {
+				err = ew
+				break
+			}
+			if nw != nr {
+				err = io.ErrShortWrite
+				break
+			}
+		}
+	}
+	return readClose, err
 }
