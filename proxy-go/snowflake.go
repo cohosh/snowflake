@@ -205,9 +205,12 @@ func pollOffer(sid string) *webrtc.SessionDescription {
 
 func sendAnswer(sid string, pc *webrtc.PeerConnection) error {
 	broker := brokerURL.ResolveReference(&url.URL{Path: "answer"})
-	body := bytes.NewBuffer([]byte(serializeSessionDescription(pc.LocalDescription())))
-	req, _ := http.NewRequest("POST", broker.String(), body)
-	req.Header.Set("X-Session-ID", sid)
+	answer := string([]byte(serializeSessionDescription(pc.LocalDescription())))
+	b, err := proto.EncodeAnswerRequest(answer, sid)
+	if err != nil {
+		return err
+	}
+	req, _ := http.NewRequest("POST", broker.String(), bytes.NewBuffer(b))
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
@@ -215,6 +218,19 @@ func sendAnswer(sid string, pc *webrtc.PeerConnection) error {
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("broker returned %d", resp.StatusCode)
 	}
+
+	body, err := limitedRead(resp.Body, readLimit)
+	if err != nil {
+		return fmt.Errorf("error reading broker response: %s", err)
+	}
+	success, err := proto.DecodeAnswerResponse(body)
+	if err != nil {
+		return err
+	}
+	if !success {
+		return fmt.Errorf("broker returned client timeout")
+	}
+
 	return nil
 }
 

@@ -128,7 +128,7 @@ func TestBroker(t *testing.T) {
 				p.offerChannel <- []byte("fake offer")
 				<-done
 				So(w.Code, ShouldEqual, http.StatusOK)
-				So(w.Body.String(), ShouldEqual, "fake offer")
+				So(w.Body.String(), ShouldEqual, "{\"Status\":\"client match\",\"Offer\":\"fake offer\"}")
 			})
 
 			Convey("return empty 200 OK when no client offer is available.", func() {
@@ -149,18 +149,17 @@ func TestBroker(t *testing.T) {
 		Convey("Responds to proxy answers...", func() {
 			s := ctx.AddSnowflake("test")
 			w := httptest.NewRecorder()
-			data := bytes.NewReader([]byte("fake answer"))
+			data := bytes.NewReader([]byte("{\"Version\":\"1.0\",\"Sid\":\"test\",\"Answer\":\"test\"}"))
 
 			Convey("by passing to the client if valid.", func() {
 				r, err := http.NewRequest("POST", "snowflake.broker/answer", data)
 				So(err, ShouldBeNil)
-				r.Header.Set("X-Session-ID", "test")
 				go func(ctx *BrokerContext) {
 					proxyAnswers(ctx, w, r)
 				}(ctx)
 				answer := <-s.answerChannel
 				So(w.Code, ShouldEqual, http.StatusOK)
-				So(answer, ShouldResemble, []byte("fake answer"))
+				So(answer, ShouldResemble, []byte("test"))
 			})
 
 			Convey("with error if the proxy is not recognized", func() {
@@ -168,13 +167,12 @@ func TestBroker(t *testing.T) {
 				So(err, ShouldBeNil)
 				r.Header.Set("X-Session-ID", "invalid")
 				proxyAnswers(ctx, w, r)
-				So(w.Code, ShouldEqual, http.StatusGone)
+				So(w.Code, ShouldEqual, http.StatusBadRequest)
 			})
 
 			Convey("with error if the proxy gives invalid answer", func() {
 				data := bytes.NewReader(nil)
 				r, err := http.NewRequest("POST", "snowflake.broker/answer", data)
-				r.Header.Set("X-Session-ID", "test")
 				So(err, ShouldBeNil)
 				proxyAnswers(ctx, w, r)
 				So(w.Code, ShouldEqual, http.StatusBadRequest)
@@ -183,7 +181,6 @@ func TestBroker(t *testing.T) {
 			Convey("with error if the proxy writes too much data", func() {
 				data := bytes.NewReader(make([]byte, 100001))
 				r, err := http.NewRequest("POST", "snowflake.broker/answer", data)
-				r.Header.Set("X-Session-ID", "test")
 				So(err, ShouldBeNil)
 				proxyAnswers(ctx, w, r)
 				So(w.Code, ShouldEqual, http.StatusBadRequest)
@@ -229,20 +226,19 @@ func TestBroker(t *testing.T) {
 
 		<-polled
 		So(wP.Code, ShouldEqual, http.StatusOK)
-		So(wP.Body.String(), ShouldResemble, "fake offer")
+		So(wP.Body.String(), ShouldResemble, "{\"Status\":\"client match\",\"Offer\":\"fake offer\"}")
 		So(ctx.idToSnowflake["ymbcCMto7KHNGYlp"], ShouldNotBeNil)
 		// Follow up with the answer request afterwards
 		wA := httptest.NewRecorder()
-		dataA := bytes.NewReader([]byte("fake answer"))
+		dataA := bytes.NewReader([]byte("{\"Version\":\"1.0\",\"Sid\":\"ymbcCMto7KHNGYlp\",\"Answer\":\"test\"}"))
 		rA, err := http.NewRequest("POST", "snowflake.broker/answer", dataA)
 		So(err, ShouldBeNil)
-		rA.Header.Set("X-Session-ID", "ymbcCMto7KHNGYlp")
 		proxyAnswers(ctx, wA, rA)
 		So(wA.Code, ShouldEqual, http.StatusOK)
 
 		<-done
 		So(wC.Code, ShouldEqual, http.StatusOK)
-		So(wC.Body.String(), ShouldEqual, "fake answer")
+		So(wC.Body.String(), ShouldEqual, "test")
 	})
 }
 

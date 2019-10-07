@@ -92,3 +92,71 @@ func DecodePollResponse(data []byte) (string, error) {
 
 	return message.Offer, nil
 }
+
+type ProxyAnswerRequest struct {
+	Version string
+	Sid     string
+	Answer  string
+}
+
+func EncodeAnswerRequest(answer string, sid string) ([]byte, error) {
+	return json.Marshal(ProxyAnswerRequest{
+		Version: "1.0",
+		Sid:     sid,
+		Answer:  answer,
+	})
+}
+
+// Returns the sdp answer and proxy sid
+func DecodeAnswerRequest(data []byte) (string, string, error) {
+	var message ProxyAnswerRequest
+
+	err := json.Unmarshal(data, &message)
+	if err != nil {
+		return "", "", err
+	}
+	if message.Version != "1.0" {
+		return "", "", fmt.Errorf("using unknown version")
+	}
+
+	if message.Sid == "" || message.Answer == "" {
+		return "", "", fmt.Errorf("no supplied sid or answer")
+	}
+
+	return message.Answer, message.Sid, nil
+}
+
+type ProxyAnswerResponse struct {
+	Status string
+}
+
+func EncodeAnswerResponse(success bool) ([]byte, error) {
+	if success {
+		return json.Marshal(ProxyAnswerResponse{
+			Status: "success",
+		})
+
+	}
+	return json.Marshal(ProxyAnswerResponse{
+		Status: "client gone",
+	})
+}
+
+func DecodeAnswerResponse(data []byte) (bool, error) {
+	var message ProxyAnswerResponse
+	var success bool
+
+	err := json.Unmarshal(data, &message)
+	if err != nil {
+		return success, err
+	}
+	if message.Status == "" {
+		return success, fmt.Errorf("received invalid data")
+	}
+
+	if message.Status == "success" {
+		success = true
+	}
+
+	return success, nil
+}

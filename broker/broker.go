@@ -249,14 +249,12 @@ an offer from proxyHandler to respond with an answer in an HTTP POST,
 which the broker will pass back to the original client.
 */
 func proxyAnswers(ctx *BrokerContext, w http.ResponseWriter, r *http.Request) {
-	id := r.Header.Get("X-Session-ID")
-	snowflake, ok := ctx.idToSnowflake[id]
-	if !ok || nil == snowflake {
-		// The snowflake took too long to respond with an answer, so its client
-		// disappeared / the snowflake is no longer recognized by the Broker.
-		w.WriteHeader(http.StatusGone)
+	if r.Body == nil {
+		log.Println("Invalid data.")
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
+
 	body, err := ioutil.ReadAll(http.MaxBytesReader(w, r.Body, readLimit))
 	if nil != err || nil == body || len(body) <= 0 {
 		log.Println("Invalid data.")
@@ -264,7 +262,32 @@ func proxyAnswers(ctx *BrokerContext, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	snowflake.answerChannel <- body
+	answer, id, err := proto.DecodeAnswerRequest(body)
+	if err != nil || answer == "" {
+		log.Println("Invalid data.")
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	var success = true
+	snowflake, ok := ctx.idToSnowflake[id]
+	if !ok || nil == snowflake {
+		// The snowflake took too long to respond with an answer, so its client
+		// disappeared / the snowflake is no longer recognized by the Broker.
+		success = false
+	}
+	b, err := proto.EncodeAnswerResponse(success)
+	if err != nil {
+		log.Printf("Error encoding answer: %s", err.Error())
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	w.Write(b)
+
+	if success {
+		snowflake.answerChannel <- []byte(answer)
+	}
+
 }
 
 func debugHandler(ctx *BrokerContext, w http.ResponseWriter, r *http.Request) {
