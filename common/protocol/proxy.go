@@ -10,13 +10,65 @@ import (
 
 const version = "1.0"
 
-// Version 1.0 specification:
-//
-// ProxyPollRequest:
-// {
-//   Sid: [generated session id of proxy]
-//   Version: 1.0
-// }
+/* Version 1.0 specification:
+
+== ProxyPollRequest ==
+{
+  Sid: [generated session id of proxy]
+  Version: 1.0
+}
+
+== ProxyPollResponse ==
+1) If a client is matched:
+HTTP 200 OK
+{
+  Status: "client match",
+  {
+    type: offer,
+    sdp: [WebRTC SDP]
+  }
+}
+
+2) If a client is not matched:
+HTTP 200 OK
+
+{
+    Status: "no proxies"
+}
+
+3) If the request is malformed:
+HTTP 400 BadRequest
+
+== ProxyAnswerRequest ==
+{
+  Sid: [generated session id of proxy]
+  Version: 1.0
+  Answer:
+  {
+    type: answer
+    sdp: [WebRTC SDP]
+  }
+}
+
+== ProxyAnswerResponse ==
+1) If the client retrieved the answer:
+HTTP 200 OK
+
+{
+  Status: "success"
+}
+
+2) If the client left:
+HTTP 200 OK
+
+{
+  Status: "client gone"
+}
+
+3) If the request is malformed:
+HTTP 400 BadRequest
+
+*/
 
 type ProxyPollRequest struct {
 	Sid     string
