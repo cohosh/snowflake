@@ -21,6 +21,7 @@ import (
 	"syscall"
 	"time"
 
+	"git.torproject.org/pluggable-transports/snowflake.git/common/protocol"
 	"git.torproject.org/pluggable-transports/snowflake.git/common/safelog"
 	"golang.org/x/crypto/acme/autocert"
 )
@@ -151,15 +152,16 @@ func (ctx *BrokerContext) AddSnowflake(id string) *Snowflake {
 For snowflake proxies to request a client from the Broker.
 */
 func proxyPolls(ctx *BrokerContext, w http.ResponseWriter, r *http.Request) {
-	id := r.Header.Get("X-Session-ID")
 	body, err := ioutil.ReadAll(http.MaxBytesReader(w, r.Body, readLimit))
-	if nil != err {
+	if err != nil {
 		log.Println("Invalid data.")
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	if string(body) != id {
-		log.Println("Mismatched IDs!")
+
+	sid, err := proto.DecodePollRequest(body)
+	if err != nil {
+		log.Println("Invalid data.")
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
@@ -173,14 +175,26 @@ func proxyPolls(ctx *BrokerContext, w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Wait for a client to avail an offer to the snowflake, or timeout if nil.
-	offer := ctx.RequestOffer(id)
+	offer := ctx.RequestOffer(sid)
+	var b []byte
 	if nil == offer {
 		ctx.metrics.proxyIdleCount++
-		w.WriteHeader(http.StatusGatewayTimeout)
+
+		b, err = proto.EncodePollResponse("", false)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		w.Write(b)
 		return
 	}
-	log.Println("Passing client offer to snowflake.")
-	if _, err := w.Write(offer); err != nil {
+	b, err = proto.EncodePollResponse(string(offer), true)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	if _, err := w.Write(b); err != nil {
 		log.Printf("proxyPolls unable to write offer with error: %v", err)
 	}
 }
