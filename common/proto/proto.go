@@ -72,15 +72,12 @@ func (h *snowflakeHeader) Parse(b []byte) error {
 }
 
 // Converts a header to bytes
-func (h *snowflakeHeader) Marshal() ([]byte, error) {
-	if h == nil {
-		return nil, fmt.Errorf("nil header")
-	}
+func (h *snowflakeHeader) marshal() []byte {
 	b := make([]byte, snowflakeHeaderLen, snowflakeHeaderLen)
 	binary.BigEndian.PutUint32(b[0:4], h.seq)
 	binary.BigEndian.PutUint32(b[4:8], h.ack)
 	binary.BigEndian.PutUint16(b[8:10], h.length)
-	return b, nil
+	return b
 
 }
 
@@ -307,16 +304,13 @@ func (s *SnowflakeConn) sendAck() error {
 	h.ack = s.ack
 	s.seqLock.Unlock()
 
-	bytes, err := h.Marshal()
-	if err != nil {
-		return err
-	}
+	bytes := h.marshal()
 
 	if len(bytes) != snowflakeHeaderLen {
 		return fmt.Errorf("Error crafting acknowledgment packet")
 	}
 	s.writeLock.Lock()
-	_, err = s.conn.Write(bytes)
+	_, err := s.conn.Write(bytes)
 	if err != nil {
 		return err
 	}
@@ -344,10 +338,7 @@ func (s *SnowflakeConn) Write(b []byte) (n int, err error) {
 	h.ack = s.ack
 	s.seqLock.Unlock()
 
-	bytes, err := h.Marshal()
-	if err != nil {
-		return 0, err
-	}
+	bytes := h.marshal()
 	bytes = append(bytes, b...)
 	s.seq += uint32(len(b))
 
