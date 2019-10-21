@@ -17,10 +17,10 @@ func TestSnowflakeProto(t *testing.T) {
 		client, server := net.Pipe()
 
 		c := NewSnowflakeConn()
-		c.NewSnowflake(client, nil)
+		c.NewSnowflake(client, false)
 
 		s := NewSnowflakeConn()
-		s.NewSnowflake(server, nil)
+		s.NewSnowflake(server, false)
 
 		Convey("Create correct headers", func(ctx C) {
 			var sent, received []byte
@@ -152,10 +152,10 @@ func TestSnowflakeProtoTimeouts(t *testing.T) {
 		client, server := net.Pipe()
 
 		c := NewSnowflakeConn()
-		c.NewSnowflake(client, nil)
+		c.NewSnowflake(client, false)
 
 		s := NewSnowflakeConn()
-		s.NewSnowflake(server, nil)
+		s.NewSnowflake(server, false)
 
 		Convey("Check timeout", func(ctx C) {
 			var sent, received []byte
@@ -282,12 +282,12 @@ func TestSnowflakeProtoTimeouts(t *testing.T) {
 
 			//Now call NewSnowflake
 			client, server = net.Pipe()
-			s.NewSnowflake(server, nil)
+			s.NewSnowflake(server, false)
 			s.ack = 0
 
 			wg.Add(2)
 			go func() {
-				c.NewSnowflake(client, nil)
+				c.NewSnowflake(client, false)
 				ctx.So(c.seq, ShouldEqual, 5)
 				wg.Done()
 			}()

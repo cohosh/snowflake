@@ -44,7 +44,7 @@ var flurries map[string]*Flurry
 type Flurry struct {
 	id   string
 	conn *proto.SnowflakeConn
-	or   *net.TCPConn
+	or   net.Conn
 }
 
 // When a connection handler starts, +1 is written to this channel; when it
@@ -152,7 +152,7 @@ func webSocketHandler(ws *websocket.WebSocket) {
 	log.Printf("received new connection from snowflake")
 
 	// Find out if this connection corresponds to an open SnowflakeConn
-	sid, header, err := proto.ReadSessionID(&conn)
+	sid, err := proto.ReadSessionID(&conn)
 	if err != nil {
 		return
 	}
@@ -183,7 +183,7 @@ func webSocketHandler(ws *websocket.WebSocket) {
 		go localProxy(flurry)
 	}
 
-	flurry.conn.NewSnowflake(&conn, header)
+	flurry.conn.NewSnowflake(&conn)
 	rclose, err := proto.Proxy(flurry.or, flurry.conn)
 	log.Printf("Closed connection to Snowflake")
 	if !rclose {
