@@ -319,7 +319,9 @@ func TestSnowflakeProtoTimeouts(t *testing.T) {
 			s.seq = 5
 			timer.update(s.seq)
 			So(timer.seq, ShouldEqual, 5)
+			c.seqLock.Lock()
 			c.acked = 5
+			c.seqLock.Unlock()
 
 			wg.Add(1)
 			time.AfterFunc(snowflakeTimeout, func() {
