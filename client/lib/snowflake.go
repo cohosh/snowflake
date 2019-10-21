@@ -5,7 +5,7 @@ import (
 	"log"
 	"net"
 
-	"git.torproject.org/pluggable-transports/snowflake.git/common/snowflake-proto"
+	"git.torproject.org/pluggable-transports/snowflake.git/common/proto"
 )
 
 const (

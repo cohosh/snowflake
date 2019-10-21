@@ -20,8 +20,8 @@ import (
 	"time"
 
 	"git.torproject.org/pluggable-transports/goptlib.git"
+	"git.torproject.org/pluggable-transports/snowflake.git/common/proto"
 	"git.torproject.org/pluggable-transports/snowflake.git/common/safelog"
-	"git.torproject.org/pluggable-transports/snowflake.git/common/snowflake-proto"
 	"git.torproject.org/pluggable-transports/websocket.git/websocket"
 	"golang.org/x/crypto/acme/autocert"
 	"golang.org/x/net/http2"
