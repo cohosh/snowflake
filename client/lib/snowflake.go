@@ -53,7 +53,7 @@ func Handler(socks SocksConnector, snowflakes SnowflakeCollector) error {
 			log.Println("Snowflake reset, gathering new snowflake")
 		}()
 
-		sConn.NewSnowflake(snowflake)
+		sConn.NewSnowflake(snowflake, true)
 
 		// Begin exchanging data. Either WebRTC or localhost SOCKS will close first.
 		// In eithercase, this closes the handler and induces a new handler.

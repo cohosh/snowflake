@@ -183,7 +183,7 @@ func webSocketHandler(ws *websocket.WebSocket) {
 		go localProxy(flurry)
 	}
 
-	flurry.conn.NewSnowflake(&conn)
+	flurry.conn.NewSnowflake(&conn, false)
 	rclose, err := proto.Proxy(flurry.or, flurry.conn)
 	log.Printf("Closed connection to Snowflake")
 	if !rclose {
