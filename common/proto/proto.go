@@ -103,6 +103,39 @@ func readHeader(r io.Reader, h *snowflakeHeader) error {
 	return nil
 }
 
+type snowflakeTimer struct {
+	t   *time.Timer
+	seq uint32
+}
+
+func newSnowflakeTimer(seq uint32, s *SnowflakeConn) *snowflakeTimer {
+
+	timer := &snowflakeTimer{seq: seq}
+	timer.t = time.AfterFunc(snowflakeTimeout, func() {
+		s.seqLock.Lock()
+		if s.acked < timer.seq {
+			log.Println("Closing WebRTC connection, timed out waiting for ACK")
+			s.Close()
+		}
+		s.seqLock.Unlock()
+	})
+	return timer
+}
+
+// updates the timer by resetting the duration and
+// the sequence number to be acknowledged
+func (timer *snowflakeTimer) update(seq uint32) error {
+	if !timer.t.Stop() {
+		// timer has already been fired
+		return fmt.Errorf("timer has already stopped")
+	}
+
+	timer.seq = seq
+	timer.t.Reset(snowflakeTimeout)
+	return nil
+
+}
+
 // SessionAddr implements the net.Addr interface and is set to the snowflake
 //  sessionID by SnowflakeConn
 type SessionAddr []byte
@@ -126,17 +159,14 @@ type SnowflakeConn struct {
 	writeLock sync.Mutex //lock for writing to connection
 	timerLock sync.Mutex //lock for timers
 
-	timeout time.Duration
-	timers  []*time.Timer
+	timer *snowflakeTimer
 
 	acked uint32
 	buf   bytes.Buffer
 }
 
 func NewSnowflakeConn() *SnowflakeConn {
-	s := &SnowflakeConn{
-		timeout: snowflakeTimeout,
-	}
+	s := &SnowflakeConn{}
 	return s
 }
 
@@ -338,19 +368,11 @@ func (s *SnowflakeConn) Write(b []byte) (n int, err error) {
 		return len(b), nil
 	}
 
-	//set a timer on the acknowledgement
-	sentSeq := s.seq
-	timer := time.AfterFunc(s.timeout, func() {
-		s.seqLock.Lock()
-		if s.acked < sentSeq {
-			log.Println("Closing WebRTC connection, timed out waiting for ACK")
-			s.Close()
-		}
-		s.seqLock.Unlock()
-	})
-	s.timerLock.Lock()
-	s.timers = append(s.timers, timer)
-	s.timerLock.Unlock()
+	if s.timer == nil {
+		s.timer = newSnowflakeTimer(s.seq, s)
+	} else {
+		s.timer.update(s.seq)
+	}
 
 	return len(b), err
 
@@ -360,11 +382,8 @@ func (s *SnowflakeConn) Close() error {
 	err := s.conn.Close()
 	//terminate all waiting timers
 	s.timerLock.Lock()
-	for _, timer := range s.timers {
-		timer.Stop()
-	}
+	s.timer.t.Stop()
 	s.timerLock.Unlock()
-	s.timers = s.timers[:0]
 	return err
 }
 
