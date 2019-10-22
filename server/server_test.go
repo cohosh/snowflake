@@ -4,6 +4,9 @@ import (
 	"net"
 	"strconv"
 	"testing"
+
+	"git.torproject.org/pluggable-transports/snowflake.git/common/proto"
+	. "github.com/smartystreets/goconvey/convey"
 )
 
 func TestClientAddr(t *testing.T) {
@@ -46,4 +49,46 @@ func TestClientAddr(t *testing.T) {
 			t.Errorf("clientAddr(%q) → %q, not %q", input, useraddr, "")
 		}
 	}
+}
+
+func TestFlurries(t *testing.T) {
+	Convey("Snowflake protocol", t, func() {
+
+		client, server := net.Pipe()
+
+		c := proto.NewSnowflakeConn()
+		s := proto.NewSnowflakeConn()
+
+		Convey("Test flurries", func() {
+			flurries := newFlurries()
+			pc, _ := net.Pipe() //used as stub OR cons
+			c2 := proto.NewSnowflakeConn()
+
+			// Add two new flurries
+			go func() {
+				c.NewSnowflake(client, true)
+				c2.NewSnowflake(client, true)
+			}()
+			addr, err := proto.ReadSessionID(server)
+			flurries.Add(addr, s, pc)
+			So(err, ShouldEqual, nil)
+
+			addr, err = proto.ReadSessionID(server)
+			flurries.Add(addr, s, pc)
+			So(err, ShouldEqual, nil)
+
+			So(len(flurries.flurries), ShouldEqual, 2)
+
+			// Get a flurry
+			flurry := flurries.Get(addr)
+			So(flurry.Addr, ShouldResemble, addr)
+			So(flurry.Conn, ShouldEqual, s)
+			So(flurry.Or, ShouldEqual, pc)
+
+			// Delete a flurry
+			flurries.Delete(addr)
+			So(len(flurries.flurries), ShouldEqual, 1)
+
+		})
+	})
 }

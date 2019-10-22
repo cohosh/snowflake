@@ -38,7 +38,7 @@ const listenAndServeErrorTimeout = 100 * time.Millisecond
 
 var ptInfo pt.ServerInfo
 
-var flurries *Flurries = newFlurries()
+var flurries *Flurries
 
 // When a connection handler starts, +1 is written to this channel; when it
 // ends, -1 is written.
@@ -294,13 +294,14 @@ func main() {
 	//We want to send the log output through our scrubber first
 	scrubber := &safelog.LogScrubber{Output: logOutput}
 	log.SetOutput(scrubber)
+	proto.SetLog(scrubber)
 
 	if !disableTLS && acmeHostnamesCommas == "" {
 		log.Fatal("the --acme-hostnames option is required")
 	}
 	acmeHostnames := strings.Split(acmeHostnamesCommas, ",")
 
-	proto.SetLog(scrubber)
+	flurries = newFlurries()
 
 	log.Printf("starting")
 	var err error
