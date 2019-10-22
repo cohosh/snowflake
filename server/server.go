@@ -38,14 +38,7 @@ const listenAndServeErrorTimeout = 100 * time.Millisecond
 
 var ptInfo pt.ServerInfo
 
-// Map of open E2E snowflake connections with client
-var flurries map[string]*Flurry
-
-type Flurry struct {
-	id   string
-	conn *proto.SnowflakeConn
-	or   net.Conn
-}
+var flurries *Flurries = newFlurries()
 
 // When a connection handler starts, +1 is written to this channel; when it
 // ends, -1 is written.
@@ -131,11 +124,11 @@ func clientAddr(clientIPParam string) string {
 }
 
 func localProxy(flurry *Flurry) {
-	_, err := proto.Proxy(flurry.conn, flurry.or)
-	log.Printf("Closed connection to OR port for sid %s with error: %s", flurry.id, err.Error())
-	flurry.conn.Close()
-	flurry.or.Close()
-	delete(flurries, flurry.id)
+	_, err := proto.Proxy(flurry.Conn, flurry.Or)
+	log.Printf("Closed connection to OR port for sid %s with error: %s", flurry.Addr.String(), err.Error())
+	flurry.Conn.Close()
+	flurry.Or.Close()
+	flurries.Delete(flurry.Addr)
 }
 
 func webSocketHandler(ws *websocket.WebSocket) {
@@ -152,12 +145,12 @@ func webSocketHandler(ws *websocket.WebSocket) {
 	log.Printf("received new connection from snowflake")
 
 	// Find out if this connection corresponds to an open SnowflakeConn
-	sid, err := proto.ReadSessionID(&conn)
+	saddr, err := proto.ReadSessionID(&conn)
 	if err != nil {
 		return
 	}
 
-	flurry := flurries[string(sid)]
+	flurry := flurries.Get(saddr)
 	if flurry == nil {
 
 		// Pass the address of client as the remote address of incoming connection
@@ -176,19 +169,18 @@ func webSocketHandler(ws *websocket.WebSocket) {
 		}
 
 		sConn := proto.NewSnowflakeConn()
-		flurry = &Flurry{id: sid, conn: sConn, or: or}
-		flurries[string(sid)] = flurry
+		flurry = flurries.Add(saddr, sConn, or)
 
 		//start reading from OR port
 		go localProxy(flurry)
 	}
 
-	flurry.conn.NewSnowflake(&conn, false)
-	rclose, err := proto.Proxy(flurry.or, flurry.conn)
+	flurry.Conn.NewSnowflake(&conn, false)
+	rclose, err := proto.Proxy(flurry.Or, flurry.Conn)
 	log.Printf("Closed connection to Snowflake")
 	if !rclose {
 		log.Printf("error writing to OR port: %s", err.Error())
-		flurry.or.Close()
+		flurry.Or.Close()
 	}
 }
 
@@ -308,8 +300,6 @@ func main() {
 	}
 	acmeHostnames := strings.Split(acmeHostnamesCommas, ",")
 
-	// Initialize flurry
-	flurries = make(map[string]*Flurry)
 	proto.SetLog(scrubber)
 
 	log.Printf("starting")

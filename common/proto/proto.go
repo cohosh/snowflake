@@ -139,7 +139,7 @@ func (addr SessionAddr) Network() string {
 	return "session"
 }
 func (addr SessionAddr) String() string {
-	return string(addr)
+	return strings.TrimRight(base64.StdEncoding.EncodeToString(addr), "=")
 }
 
 type SnowflakeConn struct {
@@ -183,14 +183,15 @@ func (s *SnowflakeConn) genSessionID() error {
 }
 
 //Peak at header from a connection and return SessionAddr
-func ReadSessionID(conn io.ReadWriteCloser) (string, error) {
-	id := make([]byte, sessionIDLength)
-	_, err := io.ReadFull(conn, id)
+func ReadSessionID(conn io.ReadWriteCloser) (net.Addr, error) {
+	var addr SessionAddr
+	addr = make([]byte, sessionIDLength)
+	_, err := io.ReadFull(conn, addr)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	return strings.TrimRight(base64.StdEncoding.EncodeToString(id), "="), nil
+	return addr, nil
 }
 
 func (s *SnowflakeConn) sendSessionID() (int, error) {
