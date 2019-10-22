@@ -204,6 +204,7 @@ func TestSnowflakeProtoTimeouts(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping timeout tests in short mode")
 	}
+	snowflakeTimeout = time.Second
 	Convey("Connection set up", t, func(ctx C) {
 
 		client, server := net.Pipe()

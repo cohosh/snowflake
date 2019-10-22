@@ -55,7 +55,8 @@ import (
 const snowflakeHeaderLen = 18
 const maxLength = 65535
 const sessionIDLength = 8
-const snowflakeTimeout = 10 * time.Second
+
+var snowflakeTimeout = 10 * time.Second
 
 type snowflakeHeader struct {
 	seq    uint32
@@ -266,11 +267,7 @@ func (s *SnowflakeConn) readBody(header snowflakeHeader, pw *io.PipeWriter) {
 
 	if n > 0 {
 		//send acknowledgement
-		go func() {
-			if err := s.sendAck(); err != nil {
-				log.Printf("Error sending acknowledgement")
-			}
-		}()
+		go s.sendAck()
 	}
 }
 
@@ -296,7 +293,7 @@ func (s *SnowflakeConn) Read(b []byte) (int, error) {
 	return s.pr.Read(b)
 }
 
-func (s *SnowflakeConn) sendAck() error {
+func (s *SnowflakeConn) sendAck() {
 
 	h := new(snowflakeHeader)
 	h.length = 0
@@ -307,17 +304,12 @@ func (s *SnowflakeConn) sendAck() error {
 
 	bytes := h.marshal()
 
-	if len(bytes) != snowflakeHeaderLen {
-		return fmt.Errorf("Error crafting acknowledgment packet")
-	}
 	s.writeLock.Lock()
 	_, err := s.conn.Write(bytes)
+	defer s.writeLock.Unlock()
 	if err != nil {
-		return err
+		log.Printf("Error sending acknowledgment packet: %s", err.Error())
 	}
-	s.writeLock.Unlock()
-
-	return err
 }
 
 //Writes bytes to the underlying connection but saves them in a buffer first.
@@ -361,11 +353,13 @@ func (s *SnowflakeConn) Write(b []byte) (n int, err error) {
 		return len(b), err
 	}
 
+	s.timerLock.Lock()
 	if s.timer == nil {
 		s.timer = newSnowflakeTimer(s.seq, s)
 	} else {
 		s.timer.update(s.seq)
 	}
+	s.timerLock.Unlock()
 
 	return len(b), err
 
