@@ -357,7 +357,7 @@ func (s *SnowflakeConn) Write(b []byte) (n int, err error) {
 	s.writeLock.Unlock()
 	if err2 != nil {
 		log.Printf("Error writing to connection: %s", err.Error())
-		return len(b), nil
+		return len(b), err
 	}
 
 	if s.timer == nil {
