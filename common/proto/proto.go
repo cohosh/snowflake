@@ -81,7 +81,7 @@ func (h *snowflakeHeader) marshal() []byte {
 
 }
 
-// Parses a webRTC header from bytes received on the
+// Parses a Snowflake header from bytes received on the
 // webRTC connection
 func readHeader(r io.Reader, h *snowflakeHeader) error {
 

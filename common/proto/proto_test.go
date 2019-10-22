@@ -2,6 +2,7 @@ package proto
 
 import (
 	"io"
+	"io/ioutil"
 	"math"
 	"net"
 	"sync"
@@ -96,7 +97,7 @@ func TestSnowflakeProto(t *testing.T) {
 			var sent, received, buffer []byte
 			var wg sync.WaitGroup
 			sent = []byte{'H', 'E', 'L', 'L', 'O'}
-			received = make([]byte, 3, 3)
+			received = make([]byte, 3)
 
 			var n int
 			var err error
@@ -109,28 +110,17 @@ func TestSnowflakeProto(t *testing.T) {
 			}()
 
 			go func() {
-				n, err = s.Read(received)
-				buffer = append(buffer, received[:n]...)
-				ctx.So(err, ShouldEqual, nil)
-				ctx.So(n, ShouldEqual, 3)
-				ctx.So(buffer, ShouldResemble, sent[:3])
+				for i := 0; i < 3; i++ {
+					n, err = io.ReadFull(s, received)
+					buffer = append(buffer, received[:n]...)
+					ctx.So(err, ShouldEqual, nil)
+					ctx.So(n, ShouldEqual, 3)
+				}
 
 				n, err = s.Read(received)
 				buffer = append(buffer, received[:n]...)
 				ctx.So(err, ShouldEqual, nil)
-				ctx.So(n, ShouldEqual, 2)
-				ctx.So(buffer, ShouldResemble, sent)
-
-				n, err = s.Read(received)
-				buffer = append(buffer, received[:n]...)
-				ctx.So(err, ShouldEqual, nil)
-				ctx.So(n, ShouldEqual, 3)
-				ctx.So(buffer, ShouldResemble, append(sent, sent[:3]...))
-
-				n, err = s.Read(received)
-				buffer = append(buffer, received[:n]...)
-				ctx.So(err, ShouldEqual, nil)
-				ctx.So(n, ShouldEqual, 2)
+				ctx.So(n, ShouldEqual, 1)
 				ctx.So(buffer, ShouldResemble, append(sent, sent...))
 
 				s.seqLock.Lock()
@@ -140,6 +130,73 @@ func TestSnowflakeProto(t *testing.T) {
 			}()
 			wg.Wait()
 
+		})
+		Convey("Check out-of-order sequence numbers", func(ctx C) {
+			go func() {
+				hb := (&snowflakeHeader{
+					seq:    5,
+					ack:    0,
+					length: 5,
+				}).marshal()
+				// Write future packet
+				client.Write(hb)
+				client.Write([]byte("HELLO"))
+
+				hb = (&snowflakeHeader{
+					seq:    0,
+					ack:    0,
+					length: 5,
+				}).marshal()
+				// Write first 5 bytes
+				client.Write(hb)
+				client.Write([]byte("HELLO"))
+				client.Close()
+			}()
+			received, err := ioutil.ReadAll(s)
+			ctx.So(err, ShouldEqual, nil)
+			ctx.So(received, ShouldResemble, []byte("HELLO"))
+		})
+		Convey("Overlapping sequence numbers", func(ctx C) {
+			go func() {
+				hb := (&snowflakeHeader{
+					seq:    0,
+					ack:    0,
+					length: 5,
+				}).marshal()
+				// Write first 5 bytes.
+				client.Write(hb)
+				client.Write([]byte("HELLO"))
+				// Exact duplicate packet.
+				client.Write(hb)
+				client.Write([]byte("HELLO"))
+
+				hb = (&snowflakeHeader{
+					seq:    3,
+					ack:    0,
+					length: 5,
+				}).marshal()
+				// Overlapping sequence number -- should be
+				// rejected (not overwrite what was already
+				// received) and bytes past the expected seq
+				// ignored.
+				client.Write(hb)
+				client.Write([]byte("XXXXX"))
+
+				// Now the expected sequence number.
+				hb = (&snowflakeHeader{
+					seq:    5,
+					ack:    0,
+					length: 5,
+				}).marshal()
+				client.Write(hb)
+				client.Write([]byte("WORLD"))
+
+				client.Close()
+			}()
+
+			received, err := ioutil.ReadAll(s)
+			ctx.So(err, ShouldEqual, nil)
+			ctx.So(received, ShouldResemble, []byte("HELLOWORLD"))
 		})
 	})
 }
@@ -187,30 +244,6 @@ func TestSnowflakeProtoTimeouts(t *testing.T) {
 			wg.Wait()
 		})
 
-		Convey("Check out-of-order sequence numbers", func(ctx C) {
-			var sent, received []byte
-			var wg sync.WaitGroup
-			sent = []byte{'H', 'E', 'L', 'L', 'O'}
-			received = make([]byte, len(sent), len(sent))
-			c.seq = 5
-
-			wg.Add(2)
-			go func() {
-				n, err := c.Write(sent)
-				ctx.So(err, ShouldEqual, nil)
-				ctx.So(n, ShouldEqual, len(sent))
-				ctx.So(c.seq, ShouldEqual, 10)
-				wg.Done()
-			}()
-			go func() {
-				n, err := s.Read(received)
-				ctx.So(err, ShouldEqual, io.EOF)
-				ctx.So(n, ShouldEqual, 0)
-				ctx.So(s.ack, ShouldEqual, 0)
-				wg.Done()
-			}()
-			wg.Wait()
-		})
 		Convey("Check sequence number overflow", func(ctx C) {
 			var sent, received []byte
 			var wg sync.WaitGroup
