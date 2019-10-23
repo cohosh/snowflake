@@ -26,6 +26,7 @@ func Handler(socks SocksConnector, snowflakes SnowflakeCollector) error {
 	}()
 	defer socks.Close()
 	sConn := proto.NewSnowflakeConn()
+	var socksClosed bool
 
 	// Continuously read from SOCKS connection
 	go func() {
@@ -33,6 +34,7 @@ func Handler(socks SocksConnector, snowflakes SnowflakeCollector) error {
 		log.Printf("Closed SOCKS connection with error: %s", err.Error())
 		socks.Close()
 		sConn.Close()
+		socksClosed = true
 	}()
 
 	for {
@@ -64,6 +66,10 @@ func Handler(socks SocksConnector, snowflakes SnowflakeCollector) error {
 			log.Printf("error writing to SOCKS connection: %s", err.Error())
 			socks.Close()
 			sConn.Close()
+			break
+		}
+		if socksClosed {
+			log.Printf("SOCKS connection closed")
 			break
 		}
 		snowflake.Close()

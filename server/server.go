@@ -142,8 +142,6 @@ func webSocketHandler(ws *websocket.WebSocket) {
 		handlerChan <- -1
 	}()
 
-	log.Printf("received new connection from snowflake")
-
 	// Find out if this connection corresponds to an open SnowflakeConn
 	saddr, err := proto.ReadSessionID(&conn)
 	if err != nil {
@@ -177,6 +175,7 @@ func webSocketHandler(ws *websocket.WebSocket) {
 
 	flurry.Conn.NewSnowflake(&conn, false)
 	rclose, err := proto.Proxy(flurry.Or, flurry.Conn)
+	flurry.Conn.Close()
 	log.Printf("Closed connection to Snowflake")
 	if !rclose {
 		log.Printf("error writing to OR port: %s", err.Error())
