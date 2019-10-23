@@ -84,11 +84,15 @@ func (h *snowflakeHeader) marshal() []byte {
 
 // Parses a Snowflake header from bytes received on the
 // webRTC connection
-func readHeader(r io.Reader, h *snowflakeHeader) error {
-
+func (s *SnowflakeConn) readHeader(h *snowflakeHeader) error {
+	var err error
 	b := make([]byte, snowflakeHeaderLen, snowflakeHeaderLen)
 
-	_, err := io.ReadFull(r, b)
+	s.readLock.Lock()
+	if s.conn != nil {
+		_, err = io.ReadFull(s.conn, b)
+	}
+	s.readLock.Unlock()
 	if err != nil {
 		return err
 	}
@@ -152,8 +156,8 @@ type SnowflakeConn struct {
 	pr   *io.PipeReader
 
 	seqLock   sync.Mutex //lock for the seq and ack numbers
-	connLock  sync.Mutex //lock for the underlying connection
-	writeLock sync.Mutex //lock for writing to connection
+	readLock  sync.Mutex //lock for the underlying connection
+	writeLock sync.Mutex //lock for the underlying connection
 	timerLock sync.Mutex //lock for timers
 
 	timer *snowflakeTimer
@@ -165,6 +169,7 @@ type SnowflakeConn struct {
 func NewSnowflakeConn() *SnowflakeConn {
 	s := &SnowflakeConn{}
 	s.genSessionID()
+	s.timer = newSnowflakeTimer(0, s)
 	return s
 }
 
@@ -196,17 +201,26 @@ func ReadSessionID(conn io.ReadWriteCloser) (net.Addr, error) {
 }
 
 func (s *SnowflakeConn) sendSessionID() (int, error) {
-	return s.conn.Write(s.SessionID)
+	var err error
+	var n int
+	s.writeLock.Lock()
+	if s.conn != nil {
+		n, err = s.conn.Write(s.SessionID)
+	}
+	s.writeLock.Unlock()
+	return n, err
 }
 
 func (s *SnowflakeConn) NewSnowflake(conn io.ReadWriteCloser, isClient bool) error {
 
-	s.connLock.Lock()
 	if s.conn != nil {
 		s.conn.Close()
 	}
+	s.readLock.Lock()
+	s.writeLock.Lock()
 	s.conn = conn
-	s.connLock.Unlock()
+	s.writeLock.Unlock()
+	s.readLock.Unlock()
 	pr, pw := io.Pipe()
 	s.pr = pr
 
@@ -243,17 +257,21 @@ func (s *SnowflakeConn) readBody(header snowflakeHeader, pw *io.PipeWriter) {
 	var err error
 	s.seqLock.Lock()
 	if header.seq == s.ack {
-		s.connLock.Lock()
-		n, err = io.CopyN(pw, s.conn, int64(header.length))
-		s.connLock.Unlock()
+		s.readLock.Lock()
+		if s.conn != nil {
+			n, err = io.CopyN(pw, s.conn, int64(header.length))
+		}
+		s.readLock.Unlock()
 		if err != nil {
 			log.Printf("Error copying bytes from WebRTC connection to pipe: %s", err.Error())
 		}
 		s.ack += uint32(header.length)
 	} else {
-		s.connLock.Lock()
-		_, err = io.CopyN(ioutil.Discard, s.conn, int64(header.length))
-		s.connLock.Unlock()
+		s.readLock.Lock()
+		if s.conn != nil {
+			_, err = io.CopyN(ioutil.Discard, s.conn, int64(header.length))
+		}
+		s.readLock.Unlock()
 		if err != nil {
 			log.Printf("Error discarding bytes from WebRTC connection to pipe: %s", err.Error())
 		}
@@ -277,9 +295,7 @@ func (s *SnowflakeConn) readLoop(pw *io.PipeWriter) {
 	for err == nil {
 		// strip headers and write data into the pipe
 		var header snowflakeHeader
-		s.connLock.Lock()
-		err = readHeader(s.conn, &header)
-		s.connLock.Unlock()
+		err = s.readHeader(&header)
 		if err != nil {
 			break
 		}
@@ -294,6 +310,7 @@ func (s *SnowflakeConn) Read(b []byte) (int, error) {
 }
 
 func (s *SnowflakeConn) sendAck() {
+	var err error
 
 	h := new(snowflakeHeader)
 	h.length = 0
@@ -305,8 +322,10 @@ func (s *SnowflakeConn) sendAck() {
 	bytes := h.marshal()
 
 	s.writeLock.Lock()
-	_, err := s.conn.Write(bytes)
-	defer s.writeLock.Unlock()
+	if s.conn != nil {
+		_, err = s.conn.Write(bytes)
+	}
+	s.writeLock.Unlock()
 	if err != nil {
 		log.Printf("Error sending acknowledgment packet: %s", err.Error())
 	}
@@ -317,6 +336,7 @@ func (s *SnowflakeConn) sendAck() {
 // other end of the connection.
 // Note: Write will not return an error if the underlying connection has been closed
 func (s *SnowflakeConn) Write(b []byte) (n int, err error) {
+	var err2 error
 
 	//need to append a header onto
 	h := new(snowflakeHeader)
@@ -346,7 +366,9 @@ func (s *SnowflakeConn) Write(b []byte) (n int, err error) {
 	}
 
 	s.writeLock.Lock()
-	n, err2 := s.conn.Write(bytes)
+	if s.conn != nil {
+		n, err2 = s.conn.Write(bytes)
+	}
 	s.writeLock.Unlock()
 	if err2 != nil {
 		log.Printf("Error writing to connection: %s", err.Error())
@@ -354,11 +376,7 @@ func (s *SnowflakeConn) Write(b []byte) (n int, err error) {
 	}
 
 	s.timerLock.Lock()
-	if s.timer == nil {
-		s.timer = newSnowflakeTimer(s.seq, s)
-	} else {
-		s.timer.update(s.seq)
-	}
+	s.timer.update(s.seq)
 	s.timerLock.Unlock()
 
 	return len(b), err
@@ -366,7 +384,15 @@ func (s *SnowflakeConn) Write(b []byte) (n int, err error) {
 }
 
 func (s *SnowflakeConn) Close() error {
-	err := s.conn.Close()
+	var err error
+	if s.conn != nil {
+		err = s.conn.Close()
+	}
+	s.readLock.Lock()
+	s.writeLock.Lock()
+	s.conn = nil
+	s.writeLock.Unlock()
+	s.readLock.Unlock()
 	//terminate all waiting timers
 	s.timerLock.Lock()
 	s.timer.t.Stop()
