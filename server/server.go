@@ -16,11 +16,11 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
 	"git.torproject.org/pluggable-transports/goptlib.git"
+	"git.torproject.org/pluggable-transports/snowflake.git/common/proto"
 	"git.torproject.org/pluggable-transports/snowflake.git/common/safelog"
 	"git.torproject.org/pluggable-transports/websocket.git/websocket"
 	"golang.org/x/crypto/acme/autocert"
@@ -37,6 +37,8 @@ const maxMessageSize = 64 * 1024
 const listenAndServeErrorTimeout = 100 * time.Millisecond
 
 var ptInfo pt.ServerInfo
+
+var flurries *Flurries
 
 // When a connection handler starts, +1 is written to this channel; when it
 // ends, -1 is written.
@@ -107,33 +109,6 @@ func newWebSocketConn(ws *websocket.WebSocket) webSocketConn {
 	return conn
 }
 
-// Copy from WebSocket to socket and vice versa.
-func proxy(local *net.TCPConn, conn *webSocketConn) {
-	var wg sync.WaitGroup
-	wg.Add(2)
-
-	go func() {
-		_, err := io.Copy(conn, local)
-		if err != nil {
-			log.Printf("error copying ORPort to WebSocket")
-		}
-		local.CloseRead()
-		conn.Close()
-		wg.Done()
-	}()
-	go func() {
-		_, err := io.Copy(local, conn)
-		if err != nil {
-			log.Printf("error copying WebSocket to ORPort")
-		}
-		local.CloseWrite()
-		conn.Close()
-		wg.Done()
-	}()
-
-	wg.Wait()
-}
-
 // Return an address string suitable to pass into pt.DialOr.
 func clientAddr(clientIPParam string) string {
 	if clientIPParam == "" {
@@ -148,6 +123,14 @@ func clientAddr(clientIPParam string) string {
 	return (&net.TCPAddr{IP: clientIP, Port: 1, Zone: ""}).String()
 }
 
+func localProxy(flurry *Flurry) {
+	_, err := proto.Proxy(flurry.Conn, flurry.Or)
+	log.Printf("Closed connection to OR port for sid %s with error: %s", flurry.Addr.String(), err.Error())
+	flurry.Conn.Close()
+	flurry.Or.Close()
+	flurries.Delete(flurry.Addr)
+}
+
 func webSocketHandler(ws *websocket.WebSocket) {
 	// Undo timeouts on HTTP request handling.
 	ws.Conn.SetDeadline(time.Time{})
@@ -159,23 +142,45 @@ func webSocketHandler(ws *websocket.WebSocket) {
 		handlerChan <- -1
 	}()
 
-	// Pass the address of client as the remote address of incoming connection
-	clientIPParam := ws.Request().URL.Query().Get("client_ip")
-	addr := clientAddr(clientIPParam)
-	if addr == "" {
-		statsChannel <- false
-	} else {
-		statsChannel <- true
-	}
-	or, err := pt.DialOr(&ptInfo, addr, ptMethodName)
-
+	// Find out if this connection corresponds to an open SnowflakeConn
+	saddr, err := proto.ReadSessionID(&conn)
 	if err != nil {
-		log.Printf("failed to connect to ORPort: %s", err)
 		return
 	}
-	defer or.Close()
 
-	proxy(or, &conn)
+	flurry := flurries.Get(saddr)
+	if flurry == nil {
+
+		// Pass the address of client as the remote address of incoming connection
+		clientIPParam := ws.Request().URL.Query().Get("client_ip")
+		addr := clientAddr(clientIPParam)
+		if addr == "" {
+			statsChannel <- false
+		} else {
+			statsChannel <- true
+		}
+		or, err := pt.DialOr(&ptInfo, addr, ptMethodName)
+
+		if err != nil {
+			log.Printf("failed to connect to ORPort: %s", err)
+			return
+		}
+
+		sConn := proto.NewSnowflakeConn()
+		flurry = flurries.Add(saddr, sConn, or)
+
+		//start reading from OR port
+		go localProxy(flurry)
+	}
+
+	flurry.Conn.NewSnowflake(&conn, false)
+	rclose, err := proto.Proxy(flurry.Or, flurry.Conn)
+	flurry.Conn.Close()
+	log.Printf("Closed connection to Snowflake")
+	if !rclose {
+		log.Printf("error writing to OR port: %s", err.Error())
+		flurry.Or.Close()
+	}
 }
 
 func initServer(addr *net.TCPAddr,
@@ -286,12 +291,16 @@ func main() {
 		logOutput = f
 	}
 	//We want to send the log output through our scrubber first
-	log.SetOutput(&safelog.LogScrubber{Output: logOutput})
+	scrubber := &safelog.LogScrubber{Output: logOutput}
+	log.SetOutput(scrubber)
+	proto.SetLog(scrubber)
 
 	if !disableTLS && acmeHostnamesCommas == "" {
 		log.Fatal("the --acme-hostnames option is required")
 	}
 	acmeHostnames := strings.Split(acmeHostnamesCommas, ",")
+
+	flurries = newFlurries()
 
 	log.Printf("starting")
 	var err error
