@@ -1,7 +1,7 @@
-//Package for a safer logging wrapper around the standard logging package
+//Package for communication with the snowflake broker
 
-//import "git.torproject.org/pluggable-transports/snowflake.git/common/protocol"
-package proto
+//import "git.torproject.org/pluggable-transports/snowflake.git/common/messages"
+package messages
 
 import (
 	"encoding/json"

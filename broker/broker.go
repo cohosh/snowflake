@@ -21,7 +21,7 @@ import (
 	"syscall"
 	"time"
 
-	"git.torproject.org/pluggable-transports/snowflake.git/common/protocol"
+	"git.torproject.org/pluggable-transports/snowflake.git/common/messages"
 	"git.torproject.org/pluggable-transports/snowflake.git/common/safelog"
 	"golang.org/x/crypto/acme/autocert"
 )
@@ -159,7 +159,7 @@ func proxyPolls(ctx *BrokerContext, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sid, err := proto.DecodePollRequest(body)
+	sid, err := messages.DecodePollRequest(body)
 	if err != nil {
 		log.Println("Invalid data.")
 		w.WriteHeader(http.StatusBadRequest)
@@ -180,7 +180,7 @@ func proxyPolls(ctx *BrokerContext, w http.ResponseWriter, r *http.Request) {
 	if nil == offer {
 		ctx.metrics.proxyIdleCount++
 
-		b, err = proto.EncodePollResponse("", false)
+		b, err = messages.EncodePollResponse("", false)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
@@ -189,7 +189,7 @@ func proxyPolls(ctx *BrokerContext, w http.ResponseWriter, r *http.Request) {
 		w.Write(b)
 		return
 	}
-	b, err = proto.EncodePollResponse(string(offer), true)
+	b, err = messages.EncodePollResponse(string(offer), true)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
@@ -257,7 +257,7 @@ func proxyAnswers(ctx *BrokerContext, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	answer, id, err := proto.DecodeAnswerRequest(body)
+	answer, id, err := messages.DecodeAnswerRequest(body)
 	if err != nil || answer == "" {
 		log.Println("Invalid data.")
 		w.WriteHeader(http.StatusBadRequest)
@@ -271,7 +271,7 @@ func proxyAnswers(ctx *BrokerContext, w http.ResponseWriter, r *http.Request) {
 		// disappeared / the snowflake is no longer recognized by the Broker.
 		success = false
 	}
-	b, err := proto.EncodeAnswerResponse(success)
+	b, err := messages.EncodeAnswerResponse(success)
 	if err != nil {
 		log.Printf("Error encoding answer: %s", err.Error())
 		w.WriteHeader(http.StatusInternalServerError)

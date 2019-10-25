@@ -1,4 +1,4 @@
-package proto
+package messages
 
 import (
 	"encoding/json"

@@ -19,7 +19,7 @@ import (
 	"sync"
 	"time"
 
-	"git.torproject.org/pluggable-transports/snowflake.git/common/protocol"
+	"git.torproject.org/pluggable-transports/snowflake.git/common/messages"
 	"git.torproject.org/pluggable-transports/snowflake.git/common/safelog"
 	"github.com/pion/webrtc"
 	"golang.org/x/net/websocket"
@@ -169,7 +169,7 @@ func pollOffer(sid string) *webrtc.SessionDescription {
 			timeOfNextPoll = now
 		}
 
-		b, err := proto.EncodePollRequest(sid)
+		b, err := messages.EncodePollRequest(sid)
 		if err != nil {
 			log.Printf("Error encoding poll message: %s", err.Error())
 			return nil
@@ -188,7 +188,8 @@ func pollOffer(sid string) *webrtc.SessionDescription {
 				if err != nil {
 					log.Printf("error reading broker response: %s", err)
 				} else {
-					offer, err := proto.DecodePollResponse(body)
+
+					offer, err := messages.DecodePollResponse(body)
 					if err != nil {
 						log.Printf("error reading broker response: %s", err.Error())
 						log.Printf("body: %s", body)
@@ -206,7 +207,7 @@ func pollOffer(sid string) *webrtc.SessionDescription {
 func sendAnswer(sid string, pc *webrtc.PeerConnection) error {
 	broker := brokerURL.ResolveReference(&url.URL{Path: "answer"})
 	answer := string([]byte(serializeSessionDescription(pc.LocalDescription())))
-	b, err := proto.EncodeAnswerRequest(answer, sid)
+	b, err := messages.EncodeAnswerRequest(answer, sid)
 	if err != nil {
 		return err
 	}
@@ -223,7 +224,7 @@ func sendAnswer(sid string, pc *webrtc.PeerConnection) error {
 	if err != nil {
 		return fmt.Errorf("error reading broker response: %s", err)
 	}
-	success, err := proto.DecodeAnswerResponse(body)
+	success, err := messages.DecodeAnswerResponse(body)
 	if err != nil {
 		return err
 	}
