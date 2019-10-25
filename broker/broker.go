@@ -182,7 +182,7 @@ func proxyPolls(ctx *BrokerContext, w http.ResponseWriter, r *http.Request) {
 
 		b, err = proto.EncodePollResponse("", false)
 		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
+			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 
@@ -191,7 +191,7 @@ func proxyPolls(ctx *BrokerContext, w http.ResponseWriter, r *http.Request) {
 	}
 	b, err = proto.EncodePollResponse(string(offer), true)
 	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	if _, err := w.Write(b); err != nil {
@@ -249,11 +249,6 @@ an offer from proxyHandler to respond with an answer in an HTTP POST,
 which the broker will pass back to the original client.
 */
 func proxyAnswers(ctx *BrokerContext, w http.ResponseWriter, r *http.Request) {
-	if r.Body == nil {
-		log.Println("Invalid data.")
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
 
 	body, err := ioutil.ReadAll(http.MaxBytesReader(w, r.Body, readLimit))
 	if nil != err || nil == body || len(body) <= 0 {

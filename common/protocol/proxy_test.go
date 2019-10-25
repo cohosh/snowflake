@@ -18,7 +18,7 @@ func TestDecodeProxyPollRequest(t *testing.T) {
 			{
 				//Version 1.0 proxy message
 				"ymbcCMto7KHNGYlp",
-				"{\"Sid\":\"ymbcCMto7KHNGYlp\",\"Version\":\"1.0\"}",
+				`{"Sid":"ymbcCMto7KHNGYlp","Version":"1.0"}`,
 				nil,
 			},
 			{
@@ -29,7 +29,7 @@ func TestDecodeProxyPollRequest(t *testing.T) {
 			},
 			{
 				"",
-				"{\"Sid\":\"ymbcCMto7KHNGYlp\"}",
+				`{"Sid":"ymbcCMto7KHNGYlp"}`,
 				fmt.Errorf(""),
 			},
 			{
@@ -39,12 +39,12 @@ func TestDecodeProxyPollRequest(t *testing.T) {
 			},
 			{
 				"",
-				"{\"Version\":\"1.0\"}",
+				`{"Version":"1.0"}`,
 				fmt.Errorf(""),
 			},
 			{
 				"",
-				"{\"Version\":\"2.0\"}",
+				`{"Version":"2.0"}`,
 				fmt.Errorf(""),
 			},
 		} {
@@ -77,25 +77,25 @@ func TestDecodeProxyAnswerRequest(t *testing.T) {
 			{
 				"test",
 				"test",
-				"{\"Version\":\"1.0\",\"Sid\":\"test\",\"Answer\":\"test\"}",
+				`{"Version":"1.0","Sid":"test","Answer":"test"}`,
 				nil,
 			},
 			{
 				"",
 				"",
-				"{\"type\":\"offer\",\"sdp\":\"v=0\r\no=- 4358805017720277108 2 IN IP4 [scrubbed]\r\ns=-\r\nt=0 0\r\na=group:BUNDLE data\r\na=msid-semantic: WMS\r\nm=application 56688 DTLS/SCTP 5000\r\nc=IN IP4 [scrubbed]\r\na=candidate:3769337065 1 udp 2122260223 [scrubbed] 56688 typ host generation 0 network-id 1 network-cost 50\r\na=candidate:2921887769 1 tcp 1518280447 [scrubbed] 35441 typ host tcptype passive generation 0 network-id 1 network-cost 50\r\na=ice-ufrag:aMAZ\r\na=ice-pwd:jcHb08Jjgrazp2dzjdrvPPvV\r\na=ice-options:trickle\r\na=fingerprint:sha-256 C8:88:EE:B9:E7:02:2E:21:37:ED:7A:D1:EB:2B:A3:15:A2:3B:5B:1C:3D:D4:D5:1F:06:CF:52:40:03:F8:DD:66\r\na=setup:actpass\r\na=mid:data\r\na=sctpmap:5000 webrtc-datachannel 1024\r\n\"}",
-				&json.SyntaxError{},
-			},
-			{
-				"",
-				"",
-				"{\"Version\":\"1.0\",\"Answer\":\"test\"}",
+				`{"type":"offer","sdp":"v=0\r\no=- 4358805017720277108 2 IN IP4 [scrubbed]\r\ns=-\r\nt=0 0\r\na=group:BUNDLE data\r\na=msid-semantic: WMS\r\nm=application 56688 DTLS/SCTP 5000\r\nc=IN IP4 [scrubbed]\r\na=candidate:3769337065 1 udp 2122260223 [scrubbed] 56688 typ host generation 0 network-id 1 network-cost 50\r\na=candidate:2921887769 1 tcp 1518280447 [scrubbed] 35441 typ host tcptype passive generation 0 network-id 1 network-cost 50\r\na=ice-ufrag:aMAZ\r\na=ice-pwd:jcHb08Jjgrazp2dzjdrvPPvV\r\na=ice-options:trickle\r\na=fingerprint:sha-256 C8:88:EE:B9:E7:02:2E:21:37:ED:7A:D1:EB:2B:A3:15:A2:3B:5B:1C:3D:D4:D5:1F:06:CF:52:40:03:F8:DD:66\r\na=setup:actpass\r\na=mid:data\r\na=sctpmap:5000 webrtc-datachannel 1024\r\n"}`,
 				fmt.Errorf(""),
 			},
 			{
 				"",
 				"",
-				"{\"Version\":\"1.0\",\"Sid\":\"test\"}",
+				`{"Version":"1.0","Answer":"test"}`,
+				fmt.Errorf(""),
+			},
+			{
+				"",
+				"",
+				`{"Version":"1.0","Sid":"test"}`,
 				fmt.Errorf(""),
 			},
 		} {
@@ -128,17 +128,17 @@ func TestDecodeProxyAnswerResponse(t *testing.T) {
 		}{
 			{
 				true,
-				"{\"Status\":\"success\"}",
+				`{"Status":"success"}`,
 				nil,
 			},
 			{
 				false,
-				"{\"Status\":\"client gone\"}",
+				`{"Status":"client gone"}`,
 				nil,
 			},
 			{
 				false,
-				"{\"Test\":\"test\"}",
+				`{"Test":"test"}`,
 				fmt.Errorf(""),
 			},
 		} {

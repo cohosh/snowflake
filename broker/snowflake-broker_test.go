@@ -113,7 +113,7 @@ func TestBroker(t *testing.T) {
 		Convey("Responds to proxy polls...", func() {
 			done := make(chan bool)
 			w := httptest.NewRecorder()
-			data := bytes.NewReader([]byte("{\"Sid\":\"ymbcCMto7KHNGYlp\",\"Version\":\"1.0\"}"))
+			data := bytes.NewReader([]byte(`{"Sid":"ymbcCMto7KHNGYlp","Version":"1.0"}`))
 			r, err := http.NewRequest("POST", "snowflake.broker/proxy", data)
 			So(err, ShouldBeNil)
 
@@ -128,7 +128,7 @@ func TestBroker(t *testing.T) {
 				p.offerChannel <- []byte("fake offer")
 				<-done
 				So(w.Code, ShouldEqual, http.StatusOK)
-				So(w.Body.String(), ShouldEqual, "{\"Status\":\"client match\",\"Offer\":\"fake offer\"}")
+				So(w.Body.String(), ShouldEqual, `{"Status":"client match","Offer":"fake offer"}`)
 			})
 
 			Convey("return empty 200 OK when no client offer is available.", func() {
@@ -141,7 +141,7 @@ func TestBroker(t *testing.T) {
 				// nil means timeout
 				p.offerChannel <- nil
 				<-done
-				So(w.Body.String(), ShouldEqual, "{\"Status\":\"no match\",\"Offer\":\"\"}")
+				So(w.Body.String(), ShouldEqual, `{"Status":"no match","Offer":""}`)
 				So(w.Code, ShouldEqual, http.StatusOK)
 			})
 		})
@@ -149,7 +149,7 @@ func TestBroker(t *testing.T) {
 		Convey("Responds to proxy answers...", func() {
 			s := ctx.AddSnowflake("test")
 			w := httptest.NewRecorder()
-			data := bytes.NewReader([]byte("{\"Version\":\"1.0\",\"Sid\":\"test\",\"Answer\":\"test\"}"))
+			data := bytes.NewReader([]byte(`{"Version":"1.0","Sid":"test","Answer":"test"}`))
 
 			Convey("by passing to the client if valid.", func() {
 				r, err := http.NewRequest("POST", "snowflake.broker/answer", data)
@@ -162,12 +162,16 @@ func TestBroker(t *testing.T) {
 				So(answer, ShouldResemble, []byte("test"))
 			})
 
-			Convey("with error if the proxy is not recognized", func() {
-				r, err := http.NewRequest("POST", "snowflake.broker/answer", nil)
+			Convey("with client gone status if the proxy is not recognized", func() {
+				data = bytes.NewReader([]byte(`{"Version":"1.0","Sid":"invalid","Answer":"test"}`))
+				r, err := http.NewRequest("POST", "snowflake.broker/answer", data)
 				So(err, ShouldBeNil)
-				r.Header.Set("X-Session-ID", "invalid")
 				proxyAnswers(ctx, w, r)
-				So(w.Code, ShouldEqual, http.StatusBadRequest)
+				So(w.Code, ShouldEqual, http.StatusOK)
+				b, err := ioutil.ReadAll(w.Body)
+				So(err, ShouldBeNil)
+				So(b, ShouldResemble, []byte(`{"Status":"client gone"}`))
+
 			})
 
 			Convey("with error if the proxy gives invalid answer", func() {
@@ -195,7 +199,7 @@ func TestBroker(t *testing.T) {
 		ctx := NewBrokerContext(NullLogger())
 
 		// Proxy polls with its ID first...
-		dataP := bytes.NewReader([]byte("{\"Sid\":\"ymbcCMto7KHNGYlp\",\"Version\":\"1.0\"}"))
+		dataP := bytes.NewReader([]byte(`{"Sid":"ymbcCMto7KHNGYlp","Version":"1.0"}`))
 		wP := httptest.NewRecorder()
 		rP, err := http.NewRequest("POST", "snowflake.broker/proxy", dataP)
 		So(err, ShouldBeNil)
@@ -226,11 +230,11 @@ func TestBroker(t *testing.T) {
 
 		<-polled
 		So(wP.Code, ShouldEqual, http.StatusOK)
-		So(wP.Body.String(), ShouldResemble, "{\"Status\":\"client match\",\"Offer\":\"fake offer\"}")
+		So(wP.Body.String(), ShouldResemble, `{"Status":"client match","Offer":"fake offer"}`)
 		So(ctx.idToSnowflake["ymbcCMto7KHNGYlp"], ShouldNotBeNil)
 		// Follow up with the answer request afterwards
 		wA := httptest.NewRecorder()
-		dataA := bytes.NewReader([]byte("{\"Version\":\"1.0\",\"Sid\":\"ymbcCMto7KHNGYlp\",\"Answer\":\"test\"}"))
+		dataA := bytes.NewReader([]byte(`{"Version":"1.0","Sid":"ymbcCMto7KHNGYlp","Answer":"test"}`))
 		rA, err := http.NewRequest("POST", "snowflake.broker/answer", dataA)
 		So(err, ShouldBeNil)
 		proxyAnswers(ctx, wA, rA)
@@ -486,7 +490,7 @@ func TestMetrics(t *testing.T) {
 		//Test unique ip
 		Convey("proxy counts by unique ip", func() {
 			w := httptest.NewRecorder()
-			data := bytes.NewReader([]byte("{\"Sid\":\"ymbcCMto7KHNGYlp\",\"Version\":\"1.0\"}"))
+			data := bytes.NewReader([]byte(`{"Sid":"ymbcCMto7KHNGYlp","Version":"1.0"}`))
 			r, err := http.NewRequest("POST", "snowflake.broker/proxy", data)
 			r.Header.Set("X-Session-ID", "test")
 			r.RemoteAddr = "129.97.208.23:8888" //CA geoip
@@ -499,7 +503,7 @@ func TestMetrics(t *testing.T) {
 			p.offerChannel <- nil
 			<-done
 
-			data = bytes.NewReader([]byte("{\"Sid\":\"ymbcCMto7KHNGYlp\",\"Version\":\"1.0\"}"))
+			data = bytes.NewReader([]byte(`{"Sid":"ymbcCMto7KHNGYlp","Version":"1.0"}`))
 			r, err = http.NewRequest("POST", "snowflake.broker/proxy", data)
 			if err != nil {
 				log.Printf("unable to get NewRequest with error: %v", err)
