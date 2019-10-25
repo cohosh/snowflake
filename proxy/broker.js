@@ -47,10 +47,16 @@ class Broker {
           return;
         }
         switch (xhr.status) {
-          case Broker.STATUS.OK:
-            return fulfill(xhr.responseText); // Should contain offer.
-          case Broker.STATUS.GATEWAY_TIMEOUT:
-            return reject(Broker.MESSAGE.TIMEOUT);
+          case Broker.CODE.OK:
+            var response = JSON.parse(xhr.responseText);
+            if (response.Status == Broker.STATUS.MATCH) {
+              return fulfill(response.Offer); // Should contain offer.
+            } else if (response.Status == Broker.STATUS.TIMEOUT) {
+              return reject(Broker.MESSAGE.TIMEOUT);
+            } else {
+              log('Broker ERROR: Unexpected ' + response.Status);
+              return reject(Broker.MESSAGE.UNEXPECTED);
+            }
           default:
             log('Broker ERROR: Unexpected ' + xhr.status + ' - ' + xhr.statusText);
             snowflake.ui.setStatus(' failure. Please refresh.');
@@ -58,7 +64,8 @@ class Broker {
         }
       };
       this._xhr = xhr; // Used by spec to fake async Broker interaction
-      return this._postRequest(id, xhr, 'proxy', id);
+      var data = {"Version": "1.0", "Sid": id}
+      return this._postRequest(xhr, 'proxy', JSON.stringify(data));
     });
   }
 
@@ -74,24 +81,22 @@ class Broker {
         return;
       }
       switch (xhr.status) {
-        case Broker.STATUS.OK:
+        case Broker.CODE.OK:
           dbg('Broker: Successfully replied with answer.');
           return dbg(xhr.responseText);
-        case Broker.STATUS.GONE:
-          return dbg('Broker: No longer valid to reply with answer.');
         default:
           dbg('Broker ERROR: Unexpected ' + xhr.status + ' - ' + xhr.statusText);
           return snowflake.ui.setStatus(' failure. Please refresh.');
       }
     };
-    return this._postRequest(id, xhr, 'answer', JSON.stringify(answer));
+    var data = {"Version": "1.0", "Sid": id, "Answer": JSON.stringify(answer)};
+    return this._postRequest(xhr, 'answer', JSON.stringify(data));
   }
 
-  _postRequest(id, xhr, urlSuffix, payload) {
+  _postRequest(xhr, urlSuffix, payload) {
     var err;
     try {
       xhr.open('POST', this.url + urlSuffix);
-      xhr.setRequestHeader('X-Session-ID', id);
     } catch (error) {
       err = error;
       /*
@@ -108,10 +113,15 @@ class Broker {
 
 }
 
-Broker.STATUS = {
+Broker.CODE = {
   OK: 200,
-  GONE: 410,
-  GATEWAY_TIMEOUT: 504
+  BAD_REQUEST: 400,
+  INTERNAL_SERVER_ERROR: 500
+};
+
+Broker.STATUS = {
+  MATCH: "client match",
+  TIMEOUT: "no match"
 };
 
 Broker.MESSAGE = {
