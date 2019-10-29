@@ -47,12 +47,15 @@ class Broker {
           return;
         }
         switch (xhr.status) {
-          case Broker.STATUS.OK:
+          case Broker.CODE.OK:
             var response = JSON.parse(xhr.responseText);
-            if (response.Status == "client match") {
+            if (response.Status == Broker.STATUS.MATCH) {
               return fulfill(response.Offer); // Should contain offer.
-            } else {
+            } else if (response.Status == Broker.STATUS.TIMEOUT) {
               return reject(Broker.MESSAGE.TIMEOUT);
+            } else {
+              log('Broker ERROR: Unexpected ' + response.Status);
+              return reject(Broker.MESSAGE.UNEXPECTED);
             }
           default:
             log('Broker ERROR: Unexpected ' + xhr.status + ' - ' + xhr.statusText);
@@ -78,7 +81,7 @@ class Broker {
         return;
       }
       switch (xhr.status) {
-        case Broker.STATUS.OK:
+        case Broker.CODE.OK:
           dbg('Broker: Successfully replied with answer.');
           return dbg(xhr.responseText);
         default:
@@ -110,10 +113,15 @@ class Broker {
 
 }
 
-Broker.STATUS = {
+Broker.CODE = {
   OK: 200,
   BAD_REQUEST: 400,
   INTERNAL_SERVER_ERROR: 500
+};
+
+Broker.STATUS = {
+  MATCH: "client match",
+  TIMEOUT: "no match"
 };
 
 Broker.MESSAGE = {

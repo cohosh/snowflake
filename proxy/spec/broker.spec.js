@@ -35,7 +35,7 @@ describe('Broker', function() {
       // fake successful request and response from broker.
       spyOn(b, '_postRequest').and.callFake(function() {
         b._xhr.readyState = b._xhr.DONE;
-        b._xhr.status = Broker.STATUS.OK;
+        b._xhr.status = Broker.CODE.OK;
         b._xhr.responseText = '{"Status":"client match","Offer":"fake offer"}';
         return b._xhr.onreadystatechange();
       });
@@ -46,7 +46,7 @@ describe('Broker', function() {
         expect(desc).toEqual('fake offer');
         return done();
       }).catch(function() {
-        fail('should not reject on Broker.STATUS.OK');
+        fail('should not reject on Broker.CODE.OK');
         return done();
       });
     });
@@ -57,7 +57,7 @@ describe('Broker', function() {
       // fake timed-out request from broker
       spyOn(b, '_postRequest').and.callFake(function() {
         b._xhr.readyState = b._xhr.DONE;
-        b._xhr.status = Broker.STATUS.OK;
+        b._xhr.status = Broker.CODE.OK;
         b._xhr.responseText = '{"Status":"no match"}';
         return b._xhr.onreadystatechange();
       });
