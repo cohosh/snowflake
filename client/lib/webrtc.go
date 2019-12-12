@@ -158,7 +158,13 @@ func (c *WebRTCPeer) preparePeerConnection() error {
 		c.pc = nil
 	}
 
-	s := webrtc.SettingEngine{}
+	logFactory := logging.NewDefaultLoggerFactory()
+	logFactory.DefaultLogLevel = logging.LogLevelInfo
+	logFactory.Writer = log.Writer()
+
+	s := webrtc.SettingEngine{
+		LoggerFactory: logFactory,
+	}
 	s.SetTrickle(true)
 	api := webrtc.NewAPI(webrtc.WithSettingEngine(s))
 	pc, err := api.NewPeerConnection(*c.config)
