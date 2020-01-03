@@ -15,7 +15,7 @@ import (
 	"time"
 
 	pt "git.torproject.org/pluggable-transports/goptlib.git"
-	sf "git.torproject.org/pluggable-transports/snowflake.git/client/lib"
+	sf "github.com/cohosh/snowflake/tree/modules/client/lib"
 	"git.torproject.org/pluggable-transports/snowflake.git/common/safelog"
 	"github.com/pion/webrtc/v2"
 )
