@@ -403,6 +403,45 @@ func runSession(sid string) {
 	}
 }
 
+func testThroughput() {
+	var err error
+	probe := new(Broker)
+	probe.transport = http.DefaultTransport.(*http.Transport)
+	probe.url, err = url.Parse("159.203.63.110") //hard code this for now
+	if err != nil {
+		log.Fatalf("invalid probe url: %s", err)
+	}
+	brokerPath := probe.url.ResolveReference(&url.URL{Scheme: "http", Host: "159.203.63.110:8080", Path: "api/snowflake-poll"})
+
+	sessionID := genSessionID()
+
+	req, err := http.NewRequest("POST", brokerPath.String(), bytes.NewBuffer(createSnowflakeRequest(sessionID)))
+	if err != nil {
+		log.Printf("Error creating request: %s", err.Error())
+		return
+	}
+	resp, err := probe.transport.RoundTrip(req)
+	if err != nil {
+		log.Printf("error polling broker: %s", err)
+	} else {
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			log.Printf("proxy returns: %d", resp.StatusCode)
+		} else {
+			var offer SnowflakeOffer
+			decoder := json.NewDecoder(resp.Body)
+			if err = decoder.Decode(&offer); err != nil {
+				log.Printf("error reading broker response: %s", err.Error())
+				log.Printf("body: %s", resp.Body)
+				return
+			}
+
+			log.Printf("offer:%s", offer)
+		}
+	}
+
+}
+
 func main() {
 	var capacity uint
 	var stunURL string
@@ -458,6 +497,9 @@ func main() {
 	for i := uint(0); i < capacity; i++ {
 		tokens <- true
 	}
+
+	//Perform a throughput test
+	testThroughput()
 
 	for {
 		getToken()
