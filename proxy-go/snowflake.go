@@ -406,6 +406,7 @@ func runSession(sid string) {
 func testThroughput(config webrtc.Configuration) {
 	var err error
 	var offer SnowflakeOffer
+	var result SnowflakeResult
 
 	probe := new(Broker)
 	probe.transport = http.DefaultTransport.(*http.Transport)
@@ -445,11 +446,40 @@ func testThroughput(config webrtc.Configuration) {
 
 	// create answer
 	dataChan := make(chan struct{})
-	_, err = makePeerConnectionFromOffer(sdp, config, dataChan)
+	pc, err := makePeerConnectionFromOffer(sdp, config, dataChan)
 	if err != nil {
 		log.Printf("error making WebRTC connection: %s", err)
 		retToken()
 		return
+	}
+
+	answer := pc.LocalDescription()
+
+	// send answer
+	testReq := CreateSnowflakeAnswer(sessionID, serializeSessionDescription(answer))
+	brokerPath = probe.url.ResolveReference(&url.URL{Scheme: "http", Host: "159.203.63.110:8080", Path: "api/snowflake-test"})
+	req, err = http.NewRequest("POST", brokerPath.String(), bytes.NewBuffer(testReq))
+	if err != nil {
+		log.Printf("Error creating request: %s", err.Error())
+		return
+	}
+	resp, err = probe.transport.RoundTrip(req)
+	if err != nil {
+		log.Printf("error polling broker: %s", err)
+	} else {
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			log.Printf("proxy returns: %d", resp.StatusCode)
+		} else {
+			decoder := json.NewDecoder(resp.Body)
+			if err = decoder.Decode(&result); err != nil {
+				log.Printf("error reading broker response: %s", err.Error())
+				log.Printf("body: %s", resp.Body)
+				return
+			}
+
+			log.Printf("offer:%s", result)
+		}
 	}
 
 }
