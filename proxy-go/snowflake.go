@@ -258,7 +258,7 @@ func CopyLoop(c1 io.ReadWriteCloser, c2 io.ReadWriteCloser) {
 // conn.RemoteAddr() inside this function, as a workaround for a hang that
 // otherwise occurs inside of conn.pc.RemoteDescription() (called by
 // RemoteAddr). https://bugs.torproject.org/18628#comment:8
-func datachannelHandler(conn *webRTCConn, remoteAddr net.Addr) {
+func datachannelHandler(conn *webRTCConn) {
 	defer conn.Close()
 	defer retToken()
 
@@ -268,10 +268,10 @@ func datachannelHandler(conn *webRTCConn, remoteAddr net.Addr) {
 	}
 
 	// Retrieve client IP address
-	if remoteAddr != nil {
+	if conn.RemoteAddr() != nil {
 		// Encode client IP address in relay URL
 		q := u.Query()
-		clientIP := remoteAddr.String()
+		clientIP := conn.RemoteAddr().String()
 		q.Set("client_ip", clientIP)
 		u.RawQuery = q.Encode()
 	} else {
@@ -294,7 +294,10 @@ func datachannelHandler(conn *webRTCConn, remoteAddr net.Addr) {
 // candidates is complete and the answer is available in LocalDescription.
 // Installs an OnDataChannel callback that creates a webRTCConn and passes it to
 // datachannelHandler.
-func makePeerConnectionFromOffer(sdp *webrtc.SessionDescription, config webrtc.Configuration, dataChan chan struct{}) (*webrtc.PeerConnection, error) {
+func makePeerConnectionFromOffer(sdp *webrtc.SessionDescription,
+	config webrtc.Configuration, dataChan chan struct{},
+	handler func(conn *webRTCConn)) (*webrtc.PeerConnection, error) {
+
 	pc, err := webrtc.NewPeerConnection(config)
 	if err != nil {
 		return nil, fmt.Errorf("accept: NewPeerConnection: %s", err)
@@ -330,7 +333,7 @@ func makePeerConnectionFromOffer(sdp *webrtc.SessionDescription, config webrtc.C
 			}
 		})
 
-		go datachannelHandler(conn, conn.RemoteAddr())
+		go handler(conn)
 	})
 
 	err = pc.SetRemoteDescription(*sdp)
@@ -373,7 +376,7 @@ func runSession(sid string) {
 		return
 	}
 	dataChan := make(chan struct{})
-	pc, err := makePeerConnectionFromOffer(offer, config, dataChan)
+	pc, err := makePeerConnectionFromOffer(offer, config, dataChan, datachannelHandler)
 	if err != nil {
 		log.Printf("error making WebRTC connection: %s", err)
 		retToken()
@@ -446,7 +449,7 @@ func testThroughput(config webrtc.Configuration) {
 
 	// create answer
 	dataChan := make(chan struct{})
-	pc, err := makePeerConnectionFromOffer(sdp, config, dataChan)
+	pc, err := makePeerConnectionFromOffer(sdp, config, dataChan, datachannelHandler)
 	if err != nil {
 		log.Printf("error making WebRTC connection: %s", err)
 		retToken()
