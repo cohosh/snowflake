@@ -406,6 +406,15 @@ func runSession(sid string) {
 	}
 }
 
+func throughputHandler(conn *webRTCConn) {
+	defer conn.Close()
+
+	if _, err := io.Copy(conn, conn); err != nil {
+		log.Printf("io.Copy inside CopyLoop generated an error: %v", err)
+	}
+
+}
+
 func testThroughput(config webrtc.Configuration) {
 	var err error
 	var offer SnowflakeOffer
@@ -449,7 +458,7 @@ func testThroughput(config webrtc.Configuration) {
 
 	// create answer
 	dataChan := make(chan struct{})
-	pc, err := makePeerConnectionFromOffer(sdp, config, dataChan, datachannelHandler)
+	pc, err := makePeerConnectionFromOffer(sdp, config, dataChan, throughputHandler)
 	if err != nil {
 		log.Printf("error making WebRTC connection: %s", err)
 		retToken()
