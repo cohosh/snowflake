@@ -539,6 +539,12 @@ func main() {
 
 	//Perform a throughput test
 	testThroughput(config, probeURL)
+	go func() {
+		heartbeat := time.Tick(24 * time.Hour)
+		for range heartbeat {
+			testThroughput(config, probeURL)
+		}
+	}()
 
 	for {
 		getToken()
