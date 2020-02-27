@@ -28,6 +28,7 @@ import (
 
 const defaultBrokerURL = "https://snowflake-broker.bamsoftware.com/"
 const defaultRelayURL = "wss://snowflake.bamsoftware.com/"
+const defaultProbeURL = "http://159.203.63.110:8080"
 const defaultSTUNURL = "stun:stun.l.google.com:19302"
 const pollInterval = 5 * time.Second
 
@@ -37,7 +38,7 @@ const dataChannelTimeout = 20 * time.Second
 
 const readLimit = 100000 //Maximum number of bytes to be read from an HTTP request
 
-var broker *Broker
+var broker *Remote
 var relayURL string
 
 const (
@@ -67,11 +68,6 @@ func remoteIPFromSDP(sdp string) net.IP {
 		}
 	}
 	return nil
-}
-
-type Broker struct {
-	url       *url.URL
-	transport http.RoundTripper
 }
 
 type webRTCConn struct {
@@ -158,8 +154,32 @@ func limitedRead(r io.Reader, limit int64) ([]byte, error) {
 	return p, err
 }
 
-func (b *Broker) pollOffer(sid string) *webrtc.SessionDescription {
-	brokerPath := b.url.ResolveReference(&url.URL{Path: "proxy"})
+type Remote struct {
+	url       *url.URL
+	transport http.RoundTripper
+}
+
+func (r *Remote) MakePost(path string, payload io.Reader) ([]byte, error) {
+
+	req, err := http.NewRequest("POST", path, payload)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := r.transport.RoundTrip(req)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("remote returned status code %d", resp.StatusCode)
+	}
+
+	defer resp.Body.Close()
+	return limitedRead(resp.Body, readLimit)
+}
+
+func (r *Remote) pollOffer(sid string) *webrtc.SessionDescription {
+	brokerPath := r.url.ResolveReference(&url.URL{Path: "proxy"})
 	timeOfNextPoll := time.Now()
 	for {
 		// Sleep until we're scheduled to poll again.
@@ -178,56 +198,36 @@ func (b *Broker) pollOffer(sid string) *webrtc.SessionDescription {
 			log.Printf("Error encoding poll message: %s", err.Error())
 			return nil
 		}
-		req, _ := http.NewRequest("POST", brokerPath.String(), bytes.NewBuffer(body))
-		resp, err := b.transport.RoundTrip(req)
+		response, err := r.MakePost(brokerPath.String(), bytes.NewBuffer(body))
 		if err != nil {
-			log.Printf("error polling broker: %s", err)
-		} else {
-			defer resp.Body.Close()
-			if resp.StatusCode != http.StatusOK {
-				log.Printf("broker returns: %d", resp.StatusCode)
-			} else {
-				body, err := limitedRead(resp.Body, readLimit)
-				if err != nil {
-					log.Printf("error reading broker response: %s", err)
-				} else {
-
-					offer, err := messages.DecodePollResponse(body)
-					if err != nil {
-						log.Printf("error reading broker response: %s", err.Error())
-						log.Printf("body: %s", body)
-						return nil
-					}
-					if offer != "" {
-						return deserializeSessionDescription(offer)
-					}
-				}
-			}
+			log.Printf("error polling broker: %s", err.Error())
+			return nil
+		}
+		offer, err := messages.DecodePollResponse(response)
+		if err != nil {
+			log.Printf("error reading broker response: %s", err.Error())
+			log.Printf("body: %s", body)
+			return nil
+		}
+		if offer != "" {
+			return deserializeSessionDescription(offer)
 		}
 	}
 }
 
-func (b *Broker) sendAnswer(sid string, pc *webrtc.PeerConnection) error {
-	brokerPath := b.url.ResolveReference(&url.URL{Path: "answer"})
+func (r *Remote) sendAnswer(sid string, pc *webrtc.PeerConnection) error {
+	brokerPath := r.url.ResolveReference(&url.URL{Path: "answer"})
 	answer := string([]byte(serializeSessionDescription(pc.LocalDescription())))
 	body, err := messages.EncodeAnswerRequest(answer, sid)
 	if err != nil {
 		return err
 	}
-	req, _ := http.NewRequest("POST", brokerPath.String(), bytes.NewBuffer(body))
-	resp, err := b.transport.RoundTrip(req)
+	response, err := r.MakePost(brokerPath.String(), bytes.NewBuffer(body))
 	if err != nil {
-		return err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("broker returned %d", resp.StatusCode)
+		return fmt.Errorf("error sending answer to broker: %s", err.Error())
 	}
 
-	body, err = limitedRead(resp.Body, readLimit)
-	if err != nil {
-		return fmt.Errorf("error reading broker response: %s", err)
-	}
-	success, err := messages.DecodeAnswerResponse(body)
+	success, err := messages.DecodeAnswerResponse(response)
 	if err != nil {
 		return err
 	}
@@ -288,6 +288,16 @@ func datachannelHandler(conn *webRTCConn) {
 	defer wsConn.Close()
 	CopyLoop(conn, wsConn)
 	log.Printf("datachannelHandler ends")
+}
+
+// Handler for the throughput test
+func throughputHandler(conn *webRTCConn) {
+	defer conn.Close()
+
+	if _, err := io.Copy(conn, conn); err != nil {
+		log.Printf("io.Copy inside CopyLoop generated an error: %v", err)
+	}
+
 }
 
 // Create a PeerConnection from an SDP offer. Blocks until the gathering of ICE
@@ -406,52 +416,30 @@ func runSession(sid string) {
 	}
 }
 
-func throughputHandler(conn *webRTCConn) {
-	defer conn.Close()
-
-	if _, err := io.Copy(conn, conn); err != nil {
-		log.Printf("io.Copy inside CopyLoop generated an error: %v", err)
-	}
-
-}
-
-func testThroughput(config webrtc.Configuration) {
+func testThroughput(config webrtc.Configuration, probeURL string) {
 	var err error
 	var offer SnowflakeOffer
 	var result SnowflakeResult
 
-	probe := new(Broker)
-	probe.transport = http.DefaultTransport.(*http.Transport)
-	probe.url, err = url.Parse("159.203.63.110") //hard code this for now
-	if err != nil {
-		log.Fatalf("invalid probe url: %s", err)
-	}
-	brokerPath := probe.url.ResolveReference(&url.URL{Scheme: "http", Host: "159.203.63.110:8080", Path: "api/snowflake-poll"})
-
 	sessionID := genSessionID()
 
-	req, err := http.NewRequest("POST", brokerPath.String(), bytes.NewBuffer(CreateSnowflakeRequest(sessionID)))
+	probe := new(Remote)
+	probe.transport = http.DefaultTransport.(*http.Transport)
+	probe.url, err = url.Parse(probeURL)
 	if err != nil {
-		log.Printf("Error creating request: %s", err.Error())
+		log.Printf("Error parsing url: %s", err.Error())
+	}
+	probePath := probe.url.ResolveReference(&url.URL{Path: "api/snowflake-poll"})
+
+	response, err := probe.MakePost(probePath.String(), bytes.NewBuffer(CreateSnowflakeRequest(sessionID)))
+	if err != nil {
+		log.Printf("Error connecting to probe point: %s", err.Error())
 		return
 	}
-	resp, err := probe.transport.RoundTrip(req)
-	if err != nil {
-		log.Printf("error polling broker: %s", err)
-	} else {
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			log.Printf("proxy returns: %d", resp.StatusCode)
-		} else {
-			decoder := json.NewDecoder(resp.Body)
-			if err = decoder.Decode(&offer); err != nil {
-				log.Printf("error reading bridgestrap response: %s", err.Error())
-				log.Printf("body: %s", resp.Body)
-				return
-			}
-
-			log.Printf("offer:%s", offer)
-		}
+	if err = json.Unmarshal(response, &offer); err != nil {
+		log.Printf("error reading bridgestrap response: %s", err.Error())
+		log.Printf("body: %s", response)
+		return
 	}
 
 	sdp := deserializeSessionDescription(offer.Offer)
@@ -469,31 +457,21 @@ func testThroughput(config webrtc.Configuration) {
 
 	// send answer
 	testReq := CreateSnowflakeAnswer(sessionID, serializeSessionDescription(answer))
-	brokerPath = probe.url.ResolveReference(&url.URL{Scheme: "http", Host: "159.203.63.110:8080", Path: "api/snowflake-test"})
-	req, err = http.NewRequest("POST", brokerPath.String(), bytes.NewBuffer(testReq))
+	probePath = probe.url.ResolveReference(&url.URL{Path: "api/snowflake-test"})
+
+	response, err = probe.MakePost(probePath.String(), bytes.NewBuffer(testReq))
 	if err != nil {
-		log.Printf("Error creating request: %s", err.Error())
+		log.Printf("Error connecting to probe point: %s", err.Error())
 		return
 	}
-	resp, err = probe.transport.RoundTrip(req)
-	if err != nil {
-		log.Printf("error polling broker: %s", err)
-	} else {
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			log.Printf("proxy returns: %d", resp.StatusCode)
-		} else {
-			decoder := json.NewDecoder(resp.Body)
-			if err = decoder.Decode(&result); err != nil {
-				log.Printf("error reading bridgestrap response: %s", err.Error())
-				log.Printf("body: %s", resp.Body)
-				return
-			}
-
-			log.Printf("Throughput: %f Kbps", result.Throughput)
-			log.Printf("Latency: %d", result.Latency)
-		}
+	if err = json.Unmarshal(response, &result); err != nil {
+		log.Printf("error reading bridgestrap response: %s", err.Error())
+		log.Printf("body: %s", response)
+		return
 	}
+
+	log.Printf("Throughput: %f Kbps", result.Throughput)
+	log.Printf("Latency: %f s", result.Latency)
 
 }
 
@@ -502,10 +480,12 @@ func main() {
 	var stunURL string
 	var logFilename string
 	var rawBrokerURL string
+	var probeURL string
 
 	flag.UintVar(&capacity, "capacity", 10, "maximum concurrent clients")
 	flag.StringVar(&rawBrokerURL, "broker", defaultBrokerURL, "broker URL")
 	flag.StringVar(&relayURL, "relay", defaultRelayURL, "websocket relay URL")
+	flag.StringVar(&probeURL, "probe", defaultProbeURL, "URL for throughput testing probe")
 	flag.StringVar(&stunURL, "stun", defaultSTUNURL, "stun URL")
 	flag.StringVar(&logFilename, "log", "", "log filename")
 	flag.Parse()
@@ -526,7 +506,7 @@ func main() {
 	log.Println("starting")
 
 	var err error
-	broker = new(Broker)
+	broker = new(Remote)
 	broker.url, err = url.Parse(rawBrokerURL)
 	if err != nil {
 		log.Fatalf("invalid broker url: %s", err)
@@ -538,6 +518,10 @@ func main() {
 	_, err = url.Parse(relayURL)
 	if err != nil {
 		log.Fatalf("invalid relay url: %s", err)
+	}
+	_, err = url.Parse(probeURL)
+	if err != nil {
+		log.Fatalf("invalid probe url: %s", err)
 	}
 
 	broker.transport = http.DefaultTransport.(*http.Transport)
@@ -554,7 +538,7 @@ func main() {
 	}
 
 	//Perform a throughput test
-	testThroughput(config)
+	testThroughput(config, probeURL)
 
 	for {
 		getToken()

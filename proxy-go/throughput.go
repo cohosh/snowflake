@@ -19,7 +19,7 @@ type SnowflakeAnswer struct {
 
 type SnowflakeResult struct {
 	Throughput float64 `json:"throughput"`
-	Latency    int     `json:"latency"`
+	Latency    float64 `json:"latency"`
 	Error      string  `json:"error"`
 }
 
