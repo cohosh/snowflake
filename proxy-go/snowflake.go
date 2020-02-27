@@ -445,7 +445,7 @@ func testThroughput(config webrtc.Configuration) {
 		} else {
 			decoder := json.NewDecoder(resp.Body)
 			if err = decoder.Decode(&offer); err != nil {
-				log.Printf("error reading broker response: %s", err.Error())
+				log.Printf("error reading bridgestrap response: %s", err.Error())
 				log.Printf("body: %s", resp.Body)
 				return
 			}
@@ -485,12 +485,13 @@ func testThroughput(config webrtc.Configuration) {
 		} else {
 			decoder := json.NewDecoder(resp.Body)
 			if err = decoder.Decode(&result); err != nil {
-				log.Printf("error reading broker response: %s", err.Error())
+				log.Printf("error reading bridgestrap response: %s", err.Error())
 				log.Printf("body: %s", resp.Body)
 				return
 			}
 
-			log.Printf("offer:%s", result)
+			log.Printf("Throughput: %f Kbps", result.Throughput)
+			log.Printf("Latency: %d", result.Latency)
 		}
 	}
 

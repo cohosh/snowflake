@@ -18,9 +18,9 @@ type SnowflakeAnswer struct {
 }
 
 type SnowflakeResult struct {
-	Throughput string `json:"throughput"`
-	Latency    string `json:"latency"`
-	Error      string `json:"error"`
+	Throughput float64 `json:"throughput"`
+	Latency    int     `json:"latency"`
+	Error      string  `json:"error"`
 }
 
 func CreateSnowflakeRequest(id string) []byte {
