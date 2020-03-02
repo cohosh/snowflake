@@ -177,6 +177,8 @@ var debug, snowflake, config, broker, ui, log, dbg, init, update, silenceNotific
     snowflake = new Snowflake(config, ui, broker);
     log('== snowflake proxy ==');
     ui.initToggle();
+
+    snowflake.testThroughput()
   };
 
   update = function() {

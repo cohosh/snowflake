@@ -10,6 +10,7 @@ var cldr = require('cldr');
 var FILES = [
   'broker.js',
   'config.js',
+  'probe.js',
   'proxypair.js',
   'snowflake.js',
   'ui.js',

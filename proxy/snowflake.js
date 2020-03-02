@@ -1,4 +1,4 @@
-/* global log, dbg, DummyRateLimit, BucketRateLimit, SessionDescription, ProxyPair */
+/* global log, dbg, DummyRateLimit, BucketRateLimit, SessionDescription, ProxyPair, Probe */
 
 /*
 A JavaScript WebRTC snowflake proxy
@@ -21,6 +21,7 @@ class Snowflake {
     this.config = config;
     this.ui = ui;
     this.broker = broker;
+    this.probe = new Probe(config);
     this.proxyPairs = [];
     if (void 0 === this.config.rateLimitBytes) {
       this.rateLimit = new DummyRateLimit();
@@ -46,6 +47,27 @@ class Snowflake {
     return this.pollInterval = setInterval((() => {
       return this.pollBroker();
     }), this.config.defaultBrokerPollInterval);
+  }
+
+  // Test the throughput of your snowflake proxy
+  testThroughput() {
+    var pair, recv;
+    //make a proxy pair for the throughput test
+    pair = this.makeProxyPair();
+    if (!pair) {
+      log('Error making proxy pair for throughput test');
+      return;
+    }
+
+    recv = this.probe.requestThroughputTest(pair.id);
+    recv.then((offer) => {
+      log(offer);
+      return pair.close()
+    }, function() {
+      //on error, close proxy pair
+      log('Error opening WebRTC connection with probe point');
+      return pair.close();
+    });
   }
 
   // Regularly poll Broker for clients to serve until this snowflake is

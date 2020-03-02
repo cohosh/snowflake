@@ -6,6 +6,7 @@ class Config {
 }
 
 Config.prototype.brokerUrl = 'snowflake-broker.freehaven.net';
+Config.prototype.probeUrl = 'http://localhost:8888';
 
 Config.prototype.relayAddr = {
   host: 'snowflake.freehaven.net',
