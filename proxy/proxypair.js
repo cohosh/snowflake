@@ -105,6 +105,10 @@ class ProxyPair {
   connectRelay() {
     var params, peer_ip, ref;
     dbg('Connecting to relay...');
+    if (this.relayAddr == null) {
+        this.relay = this.client
+        return snowlake.ui.setStatus('connected');
+    }
     // Get a remote IP address from the PeerConnection, if possible. Add it to
     // the WebSocket URL's query string if available.
     // MDN marks remoteDescription as "experimental". However the other two
