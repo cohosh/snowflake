@@ -53,7 +53,7 @@ class Snowflake {
   testThroughput() {
     var pair, recv;
     //make a proxy pair for the throughput test
-    pair = this.makeProxyPair();
+    pair = this.makeProxyPair(this.probe);
     if (!pair) {
       log('Error making proxy pair for throughput test');
       return;
@@ -61,8 +61,16 @@ class Snowflake {
 
     recv = this.probe.requestThroughputTest(pair.id);
     recv.then((offer) => {
-      log(offer);
-      return pair.close()
+      if (!this.receiveOffer(pair, offer)) {
+        return pair.close();
+      }
+      //set a timeout for channel creation
+      return setTimeout((() => {
+        if (!pair.webrtcIsReady()) {
+          log('proxypair datachannel timed out waiting for open');
+          return pair.close();
+        }
+      }), 20000); // 20 second timeout
     }, function() {
       //on error, close proxy pair
       log('Error opening WebRTC connection with probe point');
@@ -75,7 +83,7 @@ class Snowflake {
   pollBroker() {
     var msg, pair, recv;
     // Poll broker for clients.
-    pair = this.makeProxyPair();
+    pair = this.makeProxyPair(this.broker);
     if (!pair) {
       log('At client capacity.');
       return;
@@ -140,12 +148,12 @@ class Snowflake {
     return pair.pc.createAnswer().then(next).catch(fail);
   }
 
-  makeProxyPair() {
+  makeProxyPair(remote) {
     if (this.proxyPairs.length >= this.config.maxNumClients) {
       return null;
     }
     var pair;
-    pair = new ProxyPair(this.relayAddr, this.rateLimit, this.config.pcConfig);
+    pair = new ProxyPair(this.relayAddr, this.rateLimit, this.config.pcConfig, remote);
     this.proxyPairs.push(pair);
 
     log('Snowflake IDs: ' + (this.proxyPairs.map(function(p) {

@@ -1,4 +1,4 @@
-/* global log, snowflake */
+/* global log, dbg, snowflake */
 
 /*
 Communication with a remote probe point for throughput tests
@@ -51,6 +51,31 @@ class Probe {
       var data = {"snowflake_id": id}
       return this._postRequest(xhr, 'api/snowflake-poll', JSON.stringify(data));
     });
+  }
+
+  // Assumes getClientOffer happened, and a WebRTC SDP answer has been generated.
+  // Sends it back to the broker, which passes it to back to the original client.
+  sendAnswer(id, answer) {
+    var xhr;
+    dbg(id + ' - Sending answer back to probe...\n');
+    dbg(answer.sdp);
+    xhr = new XMLHttpRequest();
+    xhr.onreadystatechange = function() {
+      if (xhr.DONE !== xhr.readyState) {
+        return;
+      }
+      switch (xhr.status) {
+        case Probe.CODE.OK:
+          dbg('Probe: Successfully replied with answer.');
+          log(xhr.responseText);
+          return dbg(xhr.responseText);
+        default:
+          dbg('Probe ERROR: Unexpected ' + xhr.status + ' - ' + xhr.statusText);
+          return snowflake.ui.setStatus(' failure. Please refresh.');
+      }
+    };
+    var data = {"snowflake_id": id, "answer": JSON.stringify(answer)};
+    return this._postRequest(xhr, 'api/snowflake-test', JSON.stringify(data));
   }
 
   // urlSuffix for the probe point is different depending on what action

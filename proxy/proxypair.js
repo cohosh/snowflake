@@ -16,7 +16,7 @@ class ProxyPair {
   - @relayAddr is the destination relay
   - @rateLimit specifies a rate limit on traffic
   */
-  constructor(relayAddr, rateLimit, pcConfig) {
+  constructor(relayAddr, rateLimit, pcConfig, remote) {
     this.prepareDataChannel = this.prepareDataChannel.bind(this);
     this.connectRelay = this.connectRelay.bind(this);
     this.onClientToRelayMessage = this.onClientToRelayMessage.bind(this);
@@ -27,6 +27,7 @@ class ProxyPair {
     this.relayAddr = relayAddr;
     this.rateLimit = rateLimit;
     this.pcConfig = pcConfig;
+    this.remote = remote;
     this.id = Util.genSnowflakeID();
     this.c2rSchedule = [];
     this.r2cSchedule = [];
@@ -50,7 +51,7 @@ class ProxyPair {
         // TODO: Use a promise.all to tell Snowflake about all offers at once,
         // once multiple proxypairs are supported.
         dbg('Finished gathering ICE candidates.');
-        return snowflake.broker.sendAnswer(this.id, this.pc.localDescription);
+        return this.remote.sendAnswer(this.id, this.pc.localDescription);
       }
     };
     // OnDataChannel triggered remotely from the client when connection succeeds.
@@ -106,8 +107,8 @@ class ProxyPair {
     var params, peer_ip, ref;
     dbg('Connecting to relay...');
     if (this.relayAddr == null) {
-        this.relay = this.client
-        return snowlake.ui.setStatus('connected');
+      this.relay = this.client
+      return;
     }
     // Get a remote IP address from the PeerConnection, if possible. Add it to
     // the WebSocket URL's query string if available.
@@ -228,7 +229,7 @@ class ProxyPair {
   }
 
   relayIsReady() {
-    return (null !== this.relay) && (WebSocket.OPEN === this.relay.readyState);
+    return (null !== this.relay) && ((WebSocket.OPEN === this.relay.readyState) || ('open' === this.relay.readyState));
   }
 
   isClosed(ws) {
