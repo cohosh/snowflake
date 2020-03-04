@@ -39,11 +39,12 @@ describe('ProxyPair', function() {
   var config, destination, fakeRelay, pp, rateLimit;
   fakeRelay = Parse.address('0.0.0.0:12345');
   rateLimit = new DummyRateLimit;
+  remote = snowflake.broker;
   config = new Config;
   destination = [];
 
   // Using the mock PeerConnection definition from spec/snowflake.spec.js
-  var pp = new ProxyPair(fakeRelay, rateLimit, config.pcConfig);
+  var pp = new ProxyPair(fakeRelay, rateLimit, config.pcConfig, remote);
 
   beforeEach(function() {
     return pp.begin();
@@ -79,11 +80,11 @@ describe('ProxyPair', function() {
   });
 
   it('responds with a WebRTC answer correctly', function() {
-    spyOn(snowflake.broker, 'sendAnswer');
+    spyOn(remote, 'sendAnswer');
     pp.pc.onicecandidate({
       candidate: null
     });
-    expect(snowflake.broker.sendAnswer).toHaveBeenCalled();
+    expect(remote.sendAnswer).toHaveBeenCalled();
   });
 
   it('handles a new data channel correctly', function() {
