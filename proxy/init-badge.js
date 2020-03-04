@@ -23,6 +23,7 @@ class BadgeUI extends UI {
   constructor() {
     super();
     this.popup = new Popup();
+    this.throughput = null;
   }
 
   setStatus() {}
@@ -64,6 +65,9 @@ class BadgeUI extends UI {
   setActive(connected) {
     super.setActive(connected);
     this.turnOn();
+    if (this.throughput) {
+      this.popup.setPerfDesc('Throughput: '+this.throughput+' kbps');
+    }
   }
 
   setIcon(status) {
@@ -177,6 +181,7 @@ var debug, snowflake, config, broker, ui, log, dbg, init, update, silenceNotific
     snowflake = new Snowflake(config, ui, broker);
     log('== snowflake proxy ==');
     update();
+    snowflake.testThroughput()
 
     document.getElementById('enabled').addEventListener('change', (event) => {
       if (event.target.checked) {

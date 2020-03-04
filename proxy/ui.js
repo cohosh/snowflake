@@ -12,6 +12,10 @@ class UI {
 
   log() {}
 
+  setThroughput(throughput) {
+    this.throughput = throughput;
+  }
+
 }
 
 UI.prototype.active = false;

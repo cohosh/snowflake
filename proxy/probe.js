@@ -67,6 +67,8 @@ class Probe {
       switch (xhr.status) {
         case Probe.CODE.OK:
           dbg('Probe: Successfully replied with answer.');
+          var response = JSON.parse(xhr.responseText);
+          snowflake.ui.setThroughput(response.throughput);
           log(xhr.responseText);
           return dbg(xhr.responseText);
         default:

@@ -5,6 +5,9 @@
   "popupEnabled": {
     "message": "Enabled"
   },
+  "popupPerformance": {
+    "message": "Performance"
+  },
   "popupLearnMore": {
     "message": "Learn more"
   },

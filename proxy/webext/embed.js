@@ -12,7 +12,7 @@ const port = chrome.runtime.connect({
 });
 
 port.onMessage.addListener((m) => {
-  const { active, enabled, total, missingFeature } = m;
+  const { active, enabled, total, missingFeature, perf } = m;
   const popup = new Popup();
 
   if (missingFeature) {
@@ -39,8 +39,12 @@ port.onMessage.addListener((m) => {
     popup.setStatusText(chrome.i18n.getMessage('popupStatusOff'));
     popup.setStatusDesc("");
   }
-  popup.setEnabled(enabled);
-  popup.setActive(active);
+
+  if (perf) {
+    popup.setPerfDesc('Throughput: '+perf+' kbps');
+    popup.setEnabled(enabled);
+    popup.setActive(active);
+  }
 });
 
 document.addEventListener('change', (event) => {

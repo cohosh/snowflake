@@ -14,6 +14,7 @@ class Popup {
     this.div = document.getElementById('active');
     this.statustext = document.getElementById('statustext');
     this.statusdesc = document.getElementById('statusdesc');
+    this.perfdesc = document.getElementById('perfdesc');
     this.img = document.getElementById('statusimg');
   }
   setEnabled(enabled) {
@@ -28,6 +29,9 @@ class Popup {
   setStatusDesc(desc, error) {
     this.statusdesc.innerText = desc;
     setClass(this.statusdesc, 'error', error);
+  }
+  setPerfDesc(desc) {
+    this.perfdesc.innerText = desc;
   }
   hideButton() {
     document.querySelector('.button').style.display = 'none';
