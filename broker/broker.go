@@ -28,9 +28,10 @@ import (
 )
 
 const (
-	ClientTimeout = 10
-	ProxyTimeout  = 10
-	readLimit     = 100000 //Maximum number of bytes to be read from an HTTP request
+	LatestProxyVersion = "1.0"
+	ClientTimeout      = 10
+	ProxyTimeout       = 10
+	readLimit          = 100000 //Maximum number of bytes to be read from an HTTP request
 )
 
 type BrokerContext struct {
@@ -170,11 +171,13 @@ func proxyPolls(ctx *BrokerContext, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sid, proxyType, err := messages.DecodePollRequest(body)
+	sid, proxyType, proxyVersion, err := messages.DecodePollRequest(body)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
+
+	update := (proxyVersion != LatestProxyVersion)
 
 	// Log geoip stats
 	remoteIP, _, err := net.SplitHostPort(r.RemoteAddr)
@@ -194,7 +197,7 @@ func proxyPolls(ctx *BrokerContext, w http.ResponseWriter, r *http.Request) {
 		ctx.metrics.proxyIdleCount++
 		ctx.metrics.lock.Unlock()
 
-		b, err = messages.EncodePollResponse("", false)
+		b, err = messages.EncodePollResponse("", false, update)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
@@ -203,7 +206,7 @@ func proxyPolls(ctx *BrokerContext, w http.ResponseWriter, r *http.Request) {
 		w.Write(b)
 		return
 	}
-	b, err = messages.EncodePollResponse(string(offer), true)
+	b, err = messages.EncodePollResponse(string(offer), true, update)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return

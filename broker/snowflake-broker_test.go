@@ -128,7 +128,7 @@ func TestBroker(t *testing.T) {
 				p.offerChannel <- []byte("fake offer")
 				<-done
 				So(w.Code, ShouldEqual, http.StatusOK)
-				So(w.Body.String(), ShouldEqual, `{"Status":"client match","Offer":"fake offer"}`)
+				So(w.Body.String(), ShouldEqual, `{"Status":"client match","Update":true,"Offer":"fake offer"}`)
 			})
 
 			Convey("return empty 200 OK when no client offer is available.", func() {
@@ -141,7 +141,7 @@ func TestBroker(t *testing.T) {
 				// nil means timeout
 				p.offerChannel <- nil
 				<-done
-				So(w.Body.String(), ShouldEqual, `{"Status":"no match","Offer":""}`)
+				So(w.Body.String(), ShouldEqual, `{"Status":"no match","Update":true,"Offer":""}`)
 				So(w.Code, ShouldEqual, http.StatusOK)
 			})
 		})
@@ -279,7 +279,7 @@ func TestBroker(t *testing.T) {
 
 			<-polled
 			So(wP.Code, ShouldEqual, http.StatusOK)
-			So(wP.Body.String(), ShouldResemble, `{"Status":"client match","Offer":"fake offer"}`)
+			So(wP.Body.String(), ShouldResemble, `{"Status":"client match","Update":true,"Offer":"fake offer"}`)
 			So(ctx.idToSnowflake["ymbcCMto7KHNGYlp"], ShouldNotBeNil)
 			// Follow up with the answer request afterwards
 			wA := httptest.NewRecorder()
