@@ -14,7 +14,7 @@ import (
 	"time"
 
 	pt "git.torproject.org/pluggable-transports/goptlib.git"
-	"github.com/keroserene/go-webrtc"
+	"github.com/pion/webrtc/v2"
 )
 
 var ptMethodName = "snowflake"
@@ -65,7 +65,7 @@ func (c *webRTCConn) Write(b []byte) (int, error) {
 
 func (c *webRTCConn) Close() (err error) {
 	c.once.Do(func() {
-		err = c.pc.Destroy()
+		err = c.pc.Close()
 	})
 	return
 }
@@ -111,50 +111,47 @@ func datachannelHandler(conn *webRTCConn) {
 // Installs an OnDataChannel callback that creates a webRTCConn and passes it to
 // datachannelHandler.
 func makePeerConnectionFromOffer(sdp *webrtc.SessionDescription, config *webrtc.Configuration) (*webrtc.PeerConnection, error) {
-	pc, err := webrtc.NewPeerConnection(config)
+	pc, err := webrtc.NewPeerConnection(*config)
 	if err != nil {
 		return nil, fmt.Errorf("accept: NewPeerConnection: %s", err)
 	}
-	pc.OnNegotiationNeeded = func() {
-		panic("OnNegotiationNeeded")
-	}
-	pc.OnDataChannel = func(dc *webrtc.DataChannel) {
+	pc.OnDataChannel(func(dc *webrtc.DataChannel) {
 		log.Println("OnDataChannel")
 
 		pr, pw := io.Pipe()
 		conn := &webRTCConn{pc: pc, dc: dc, pr: pr}
 
-		dc.OnOpen = func() {
+		dc.OnOpen(func() {
 			log.Println("OnOpen channel")
-		}
-		dc.OnClose = func() {
+		})
+		dc.OnClose(func() {
 			conn.lock.Lock()
 			defer conn.lock.Unlock()
 			log.Println("OnClose channel")
 			conn.dc = nil
-			pc.DeleteDataChannel(dc)
+			dc.Close()
 			pw.Close()
-		}
-		dc.OnMessage = func(msg []byte) {
-			log.Printf("OnMessage <--- %d bytes", len(msg))
+		})
+		dc.OnMessage(func(msg webrtc.DataChannelMessage) {
+			log.Printf("OnMessage <--- %d bytes", len(msg.Data))
 			var n int
-			n, err = pw.Write(msg)
+			n, err = pw.Write(msg.Data)
 			if err != nil {
 				if inerr := pw.CloseWithError(err); inerr != nil {
 					log.Printf("close with error returned error: %v", inerr)
 				}
 			}
-			if n != len(msg) {
+			if n != len(msg.Data) {
 				panic("short write")
 			}
-		}
+		})
 
 		go datachannelHandler(conn)
-	}
+	})
 
-	err = pc.SetRemoteDescription(sdp)
+	err = pc.SetRemoteDescription(*sdp)
 	if err != nil {
-		if err = pc.Destroy(); err != nil {
+		if err = pc.Close(); err != nil {
 			log.Printf("pc.Destroy returned an error: %v", err)
 		}
 		return nil, fmt.Errorf("accept: SetRemoteDescription: %s", err)
@@ -162,24 +159,17 @@ func makePeerConnectionFromOffer(sdp *webrtc.SessionDescription, config *webrtc.
 	log.Println("sdp offer successfully received.")
 
 	log.Println("Generating answer...")
-	answer, err := pc.CreateAnswer()
+	answer, err := pc.CreateAnswer(nil)
 	if err != nil {
-		if err = pc.Destroy(); err != nil {
+		if err = pc.Close(); err != nil {
 			log.Printf("pc.Destroy returned an error: %v", err)
 		}
 		return nil, err
 	}
 
-	if answer == nil {
-		if err = pc.Destroy(); err != nil {
-			log.Printf("pc.Destroy returned an error: %v", err)
-		}
-		return nil, fmt.Errorf("failed gathering ICE candidates")
-	}
-
 	err = pc.SetLocalDescription(answer)
 	if err != nil {
-		if err = pc.Destroy(); err != nil {
+		if err = pc.Close(); err != nil {
 			log.Printf("pc.Destroy returned an error: %v", err)
 		}
 		return nil, err
@@ -207,14 +197,19 @@ func main() {
 	}
 
 	log.Println("starting")
-	webrtc.SetLoggingVerbosity(1)
 	var err error
 	ptInfo, err = pt.ServerSetup(nil)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	webRTCConfig := webrtc.NewConfiguration(webrtc.OptionIceServer("stun:stun.l.google.com:19302"))
+	webRTCConfig := &webrtc.Configuration{
+		ICEServers: []webrtc.ICEServer{
+			{
+				URLs: []string{"stun:stun.l.google.com:19302"},
+			},
+		},
+	}
 
 	// Start HTTP-based signaling receiver.
 	go func() {
