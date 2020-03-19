@@ -66,32 +66,6 @@ ClientTransportPlugin snowflake exec ./client --meek
 ```
 
 
-#### Building
-
-This describes how to build the in-browser snowflake. For the client, see Usage,
-above.
-
-The client will only work if there are browser snowflakes available.
-To run your own:
-
-```
-cd proxy/
-npm run build
-```
-
-Then, start a local http server in the `proxy/build/` in any way you like.
-For instance:
-
-```
-cd build/
-python -m http.server
-```
-
-Then, open a browser tab to `http://127.0.0.1:8000/embed.html` to view
-the debug-console of the snowflake.,
-So long as that tab is open, you are an ephemeral Tor bridge.
-
-
 #### Test Environment
 
 There is a Docker-based test environment at https://github.com/cohosh/snowbox.
