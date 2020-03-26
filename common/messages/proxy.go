@@ -9,14 +9,15 @@ import (
 	"strings"
 )
 
-const version = "1.1"
+const version = "1.2"
 
-/* Version 1.1 specification:
+/* Version 1.2 specification:
 
 == ProxyPollRequest ==
 {
   Sid: [generated session id of proxy],
-  Version: 1.1,
+  Version: 1.2,
+  ProxyVersion: Major.Minor,
   Type: ["badge"|"webext"|"standalone"]
 }
 
@@ -29,13 +30,15 @@ HTTP 200 OK
     type: offer,
     sdp: [WebRTC SDP]
   }
+  Update: [true|false]
 }
 
 2) If a client is not matched:
 HTTP 200 OK
 
 {
-    Status: "no match"
+  Status: "no match",
+  Update: [true|false]
 }
 
 3) If the request is malformed:
@@ -44,7 +47,7 @@ HTTP 400 BadRequest
 == ProxyAnswerRequest ==
 {
   Sid: [generated session id of proxy],
-  Version: 1.1,
+  Version: 1.2,
   Answer:
   {
     type: answer,
@@ -73,82 +76,87 @@ HTTP 400 BadRequest
 */
 
 type ProxyPollRequest struct {
-	Sid     string
-	Version string
-	Type    string
+	Sid          string
+	Version      string
+	ProxyVersion string
+	Type         string
 }
 
-func EncodePollRequest(sid string, proxyType string) ([]byte, error) {
+func EncodePollRequest(sid string, proxyType string, proxyVersion string) ([]byte, error) {
 	return json.Marshal(ProxyPollRequest{
-		Sid:     sid,
-		Version: version,
-		Type:    proxyType,
+		Sid:          sid,
+		Version:      version,
+		ProxyVersion: proxyVersion,
+		Type:         proxyType,
 	})
 }
 
 // Decodes a poll message from a snowflake proxy and returns the
 // sid and proxy type of the proxy on success and an error if it failed
-func DecodePollRequest(data []byte) (string, string, error) {
+func DecodePollRequest(data []byte) (string, string, string, error) {
 	var message ProxyPollRequest
 
 	err := json.Unmarshal(data, &message)
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 
 	majorVersion := strings.Split(message.Version, ".")[0]
 	if majorVersion != "1" {
-		return "", "", fmt.Errorf("using unknown version")
+		return "", "", "", fmt.Errorf("using unknown version")
 	}
 
 	// Version 1.x requires an Sid
 	if message.Sid == "" {
-		return "", "", fmt.Errorf("no supplied session id")
+		return "", "", "", fmt.Errorf("no supplied session id")
 	}
 
-	return message.Sid, message.Type, nil
+	return message.Sid, message.Type, message.ProxyVersion, nil
 }
 
 type ProxyPollResponse struct {
 	Status string
+	Update bool
 	Offer  string
 }
 
-func EncodePollResponse(offer string, success bool) ([]byte, error) {
+func EncodePollResponse(offer string, success bool, update bool) ([]byte, error) {
 	if success {
 		return json.Marshal(ProxyPollResponse{
 			Status: "client match",
 			Offer:  offer,
+			Update: update,
 		})
 
 	}
 	return json.Marshal(ProxyPollResponse{
 		Status: "no match",
+		Update: update,
 	})
 }
 
 // Decodes a poll response from the broker and returns an offer
 // If there is a client match, the returned offer string will be non-empty
-func DecodePollResponse(data []byte) (string, error) {
+func DecodePollResponse(data []byte) (string, bool, error) {
 	var message ProxyPollResponse
 
 	err := json.Unmarshal(data, &message)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	if message.Status == "" {
-		return "", fmt.Errorf("received invalid data")
+		return "", false, fmt.Errorf("received invalid data")
 	}
 
 	if message.Status == "client match" {
 		if message.Offer == "" {
-			return "", fmt.Errorf("no supplied offer")
+			return "", false, fmt.Errorf("no supplied offer")
 		}
 	} else {
 		message.Offer = ""
 	}
 
-	return message.Offer, nil
+	return message.Offer, message.Update, nil
 }
 
 type ProxyAnswerRequest struct {
@@ -159,7 +167,7 @@ type ProxyAnswerRequest struct {
 
 func EncodeAnswerRequest(answer string, sid string) ([]byte, error) {
 	return json.Marshal(ProxyAnswerRequest{
-		Version: "1.1",
+		Version: "1.2",
 		Sid:     sid,
 		Answer:  answer,
 	})

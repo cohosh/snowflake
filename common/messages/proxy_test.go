@@ -13,12 +13,14 @@ func TestDecodeProxyPollRequest(t *testing.T) {
 		for _, test := range []struct {
 			sid       string
 			proxyType string
+			version   string
 			data      string
 			err       error
 		}{
 			{
 				//Version 1.0 proxy message
 				"ymbcCMto7KHNGYlp",
+				"",
 				"",
 				`{"Sid":"ymbcCMto7KHNGYlp","Version":"1.0"}`,
 				nil,
@@ -27,11 +29,21 @@ func TestDecodeProxyPollRequest(t *testing.T) {
 				//Version 1.1 proxy message
 				"ymbcCMto7KHNGYlp",
 				"standalone",
+				"",
 				`{"Sid":"ymbcCMto7KHNGYlp","Version":"1.1","Type":"standalone"}`,
 				nil,
 			},
 			{
+				//Version 1.2 proxy message
+				"ymbcCMto7KHNGYlp",
+				"standalone",
+				"1.0",
+				`{"Sid":"ymbcCMto7KHNGYlp","Version":"1.1","Type":"standalone", "ProxyVersion":"1.0"}`,
+				nil,
+			},
+			{
 				//Version 0.X proxy message:
+				"",
 				"",
 				"",
 				"ymbcCMto7KHNGYlp",
@@ -40,10 +52,12 @@ func TestDecodeProxyPollRequest(t *testing.T) {
 			{
 				"",
 				"",
+				"",
 				`{"Sid":"ymbcCMto7KHNGYlp"}`,
 				fmt.Errorf(""),
 			},
 			{
+				"",
 				"",
 				"",
 				"{}",
@@ -52,19 +66,22 @@ func TestDecodeProxyPollRequest(t *testing.T) {
 			{
 				"",
 				"",
+				"",
 				`{"Version":"1.0"}`,
 				fmt.Errorf(""),
 			},
 			{
 				"",
 				"",
+				"",
 				`{"Version":"2.0"}`,
 				fmt.Errorf(""),
 			},
 		} {
-			sid, proxyType, err := DecodePollRequest([]byte(test.data))
+			sid, proxyType, version, err := DecodePollRequest([]byte(test.data))
 			So(sid, ShouldResemble, test.sid)
 			So(proxyType, ShouldResemble, test.proxyType)
+			So(version, ShouldResemble, test.version)
 			So(err, ShouldHaveSameTypeAs, test.err)
 		}
 
@@ -73,11 +90,12 @@ func TestDecodeProxyPollRequest(t *testing.T) {
 
 func TestEncodeProxyPollRequests(t *testing.T) {
 	Convey("Context", t, func() {
-		b, err := EncodePollRequest("ymbcCMto7KHNGYlp", "standalone")
+		b, err := EncodePollRequest("ymbcCMto7KHNGYlp", "standalone", "1.0")
 		So(err, ShouldEqual, nil)
-		sid, proxyType, err := DecodePollRequest(b)
+		sid, proxyType, version, err := DecodePollRequest(b)
 		So(sid, ShouldEqual, "ymbcCMto7KHNGYlp")
 		So(proxyType, ShouldEqual, "standalone")
+		So(version, ShouldEqual, "1.0")
 		So(err, ShouldEqual, nil)
 	})
 }
@@ -85,34 +103,52 @@ func TestEncodeProxyPollRequests(t *testing.T) {
 func TestDecodeProxyPollResponse(t *testing.T) {
 	Convey("Context", t, func() {
 		for _, test := range []struct {
-			offer string
-			data  string
-			err   error
+			offer  string
+			update bool
+			data   string
+			err    error
 		}{
 			{
 				"fake offer",
-				`{"Status":"client match","Offer":"fake offer"}`,
+				false,
+				`{"Status":"client match","Offer":"fake offer","Update":false}`,
 				nil,
 			},
 			{
 				"",
+				false,
+				`{"Status":"no match","Update":false}`,
+				nil,
+			},
+			{
+				"",
+				true,
+				`{"Status":"no match","Update":true}`,
+				nil,
+			},
+			{
+				"",
+				false,
 				`{"Status":"no match"}`,
 				nil,
 			},
 			{
 				"",
-				`{"Status":"client match"}`,
+				false,
+				`{"Status":"client match","Update":false}`,
 				fmt.Errorf("no supplied offer"),
 			},
 			{
 				"",
-				`{"Test":"test"}`,
+				false,
+				`{"Test":"test","Update":false}`,
 				fmt.Errorf(""),
 			},
 		} {
-			offer, err := DecodePollResponse([]byte(test.data))
-			So(offer, ShouldResemble, test.offer)
+			offer, update, err := DecodePollResponse([]byte(test.data))
 			So(err, ShouldHaveSameTypeAs, test.err)
+			So(offer, ShouldResemble, test.offer)
+			So(update, ShouldResemble, test.update)
 		}
 
 	})
@@ -120,16 +156,18 @@ func TestDecodeProxyPollResponse(t *testing.T) {
 
 func TestEncodeProxyPollResponse(t *testing.T) {
 	Convey("Context", t, func() {
-		b, err := EncodePollResponse("fake offer", true)
+		b, err := EncodePollResponse("fake offer", true, false)
 		So(err, ShouldEqual, nil)
-		offer, err := DecodePollResponse(b)
+		offer, update, err := DecodePollResponse(b)
 		So(offer, ShouldEqual, "fake offer")
+		So(update, ShouldEqual, false)
 		So(err, ShouldEqual, nil)
 
-		b, err = EncodePollResponse("", false)
+		b, err = EncodePollResponse("", false, true)
 		So(err, ShouldEqual, nil)
-		offer, err = DecodePollResponse(b)
+		offer, update, err = DecodePollResponse(b)
 		So(offer, ShouldEqual, "")
+		So(update, ShouldEqual, true)
 		So(err, ShouldEqual, nil)
 	})
 }

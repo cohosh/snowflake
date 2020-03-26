@@ -41,6 +41,7 @@ var broker *Broker
 var relayURL string
 
 const (
+	version         = "1.0"
 	sessionIDLength = 16
 )
 
@@ -173,7 +174,7 @@ func (b *Broker) pollOffer(sid string) *webrtc.SessionDescription {
 			timeOfNextPoll = now
 		}
 
-		body, err := messages.EncodePollRequest(sid, "standalone")
+		body, err := messages.EncodePollRequest(sid, "standalone", version)
 		if err != nil {
 			log.Printf("Error encoding poll message: %s", err.Error())
 			return nil
@@ -192,7 +193,11 @@ func (b *Broker) pollOffer(sid string) *webrtc.SessionDescription {
 					log.Printf("error reading broker response: %s", err)
 				} else {
 
-					offer, err := messages.DecodePollResponse(body)
+					offer, update, err := messages.DecodePollResponse(body)
+					if update {
+						log.Printf(`There is a new version of the Go standalone snowflake
+                        proxy available. Please update your install.`)
+					}
 					if err != nil {
 						log.Printf("error reading broker response: %s", err.Error())
 						log.Printf("body: %s", body)
