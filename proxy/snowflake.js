@@ -22,6 +22,7 @@ class Snowflake {
     this.ui = ui;
     this.broker = broker;
     this.proxyPairs = [];
+    this.failures = 0;
     if (void 0 === this.config.rateLimitBytes) {
       this.rateLimit = new DummyRateLimit();
     } else {
@@ -74,7 +75,15 @@ class Snowflake {
       return setTimeout((() => {
         if (!pair.webrtcIsReady()) {
           log('proxypair datachannel timed out waiting for open');
-          return pair.close();
+          this.failures++;
+          pair.close();
+          if (this.failures > this.config.failureThreshold) {
+            this.ui.disableWithError('popupWebRTCCompatibility');
+          }
+          return;
+        } else {
+          //reset failures
+          this.failures = 0;
         }
       }), this.config.datachannelTimeout);
     }, function() {

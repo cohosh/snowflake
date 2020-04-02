@@ -23,6 +23,9 @@
   "popupBridgeUnreachable": {
     "message": "Could not connect to the bridge."
   },
+  "popupWebRTCompatibility": {
+    "message": "Failed to open WebRTC connections with client."
+  },
   "popupDescOn": {
     "message": "Number of users your Snowflake has helped circumvent censorship in the last 24 hours: $1"
   },

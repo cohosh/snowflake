@@ -29,6 +29,9 @@ Config.prototype.defaultBrokerPollInterval = 300.0 * 1000;
 // Timeout after sending answer before datachannel is opened
 Config.prototype.datachannelTimeout = 20 * 1000;
 
+// Number of failed client connections before proxy is disabled
+Config.prototype.failureThreshold = 5;
+
 Config.prototype.maxNumClients = 1;
 
 Config.prototype.proxyType = "";

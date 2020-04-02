@@ -62,6 +62,12 @@ class WebExtUI extends UI {
     });
   }
 
+  disableWithError(missingFeature) {
+    log('Encountered error: ' + missingFeature);
+    this.missingFeature = missingFeature;
+    this.setEnabled(false);
+  }
+
   postActive() {
     this.setIcon();
     if (!this.port) { return; }
