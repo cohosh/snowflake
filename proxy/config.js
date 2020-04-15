@@ -25,12 +25,15 @@ Config.prototype.minRateLimit = 10 * 1024;
 Config.prototype.rateLimitHistory = 5.0;
 
 Config.prototype.defaultBrokerPollInterval = 300.0 * 1000;
+Config.prototype.slowBrokerPollInterval = 3000.0 * 1000;
 
 // Timeout after sending answer before datachannel is opened
 Config.prototype.datachannelTimeout = 20 * 1000;
 
+// Number of failed client connections before proxy is slowed
+Config.prototype.slowFailureThreshold = 5;
 // Number of failed client connections before proxy is disabled
-Config.prototype.failureThreshold = 5;
+Config.prototype.stopFailureThreshold = 15;
 
 Config.prototype.maxNumClients = 1;
 

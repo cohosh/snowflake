@@ -23,6 +23,7 @@ class Snowflake {
     this.broker = broker;
     this.proxyPairs = [];
     this.failures = 0;
+    this.pollRate = this.config.defaultBrokerPollInterval;
     if (void 0 === this.config.rateLimitBytes) {
       this.rateLimit = new DummyRateLimit();
     } else {
@@ -44,9 +45,9 @@ class Snowflake {
   // process. |pollBroker| automatically arranges signalling.
   beginWebRTC() {
     this.pollBroker();
-    return this.pollInterval = setInterval((() => {
-      return this.pollBroker();
-    }), this.config.defaultBrokerPollInterval);
+    return this.pollTimeout = setTimeout((() => {
+      return this.beginWebRTC()
+    }), this.pollRate);
   }
 
   // Regularly poll Broker for clients to serve until this snowflake is
@@ -77,13 +78,17 @@ class Snowflake {
           log('proxypair datachannel timed out waiting for open');
           this.failures++;
           pair.close();
-          if (this.failures > this.config.failureThreshold) {
+          if (this.failures > this.config.stopFailureThreshold) {
             this.ui.disableWithError('popupWebRTCCompatibility');
+          } else if (this.failures > this.config.slowFailureThreshold) {
+            this.pollRate = this.config.slowBrokerPollInterval;
+            log('Too many failures. Slowing poll.');
           }
           return;
         } else {
           //reset failures
           this.failures = 0;
+          this.pollRate = this.config.defaultBrokerPollInterval;
         }
       }), this.config.datachannelTimeout);
     }, function() {
@@ -155,7 +160,7 @@ class Snowflake {
   disable() {
     var results;
     log('Disabling Snowflake.');
-    clearInterval(this.pollInterval);
+    clearTimeout(this.pollTimeout);
     results = [];
     while (this.proxyPairs.length > 0) {
       results.push(this.proxyPairs.pop().close());
