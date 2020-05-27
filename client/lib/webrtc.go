@@ -2,15 +2,37 @@ package lib
 
 import (
 	"bytes"
+	"encoding/csv"
 	"errors"
+	"fmt"
 	"io"
 	"log"
+	"net"
+	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
+	"git.torproject.org/pluggable-transports/snowflake.git/common/util"
 	"github.com/dchest/uniuri"
+	"github.com/pion/sdp/v2"
 	"github.com/pion/webrtc/v2"
 )
+
+var csvWriter *csv.Writer
+
+func init() {
+	f, err := os.OpenFile("proxytest.csv", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		panic(err)
+	}
+	csvWriter = csv.NewWriter(f)
+}
+
+func Now() string {
+	return time.Now().UTC().Format("2006-01-02 15:04:05.000")
+}
 
 // Remote WebRTC peer.
 // Implements the |Snowflake| interface, which includes
@@ -20,6 +42,7 @@ import (
 // one DataChannel.
 type WebRTCPeer struct {
 	id        string
+	attempt   int
 	config    *webrtc.Configuration
 	pc        *webrtc.PeerConnection
 	transport SnowflakeDataChannel // Holds the WebRTC DataChannel.
@@ -39,7 +62,18 @@ type WebRTCPeer struct {
 	lock sync.Mutex // Synchronization for DataChannel destruction
 	once sync.Once  // Synchronization for PeerConnection destruction
 
+	hasRead, hasWritten bool
+
 	BytesLogger
+}
+
+func (c *WebRTCPeer) Out(varname, value string) {
+	csvWriter.Write([]string{c.id, strconv.Itoa(c.attempt), varname, value})
+	csvWriter.Flush()
+	err := csvWriter.Error()
+	if err != nil {
+		panic(err)
+	}
 }
 
 // Construct a WebRTC PeerConnection.
@@ -81,6 +115,10 @@ func (c *WebRTCPeer) Write(b []byte) (int, error) {
 		log.Printf("Buffered %d bytes --> WebRTC", len(b))
 		c.buffer.Write(b)
 	} else {
+		if !c.hasWritten {
+			c.Out("ts_first_send", Now())
+		}
+		c.hasWritten = true
 		c.transport.Send(b)
 	}
 	return len(b), nil
@@ -118,6 +156,7 @@ func (c *WebRTCPeer) checkForStaleness() {
 			return
 		}
 		if time.Since(c.lastReceive) > SnowflakeTimeout {
+			c.Out("ts_idle_timeout", Now())
 			log.Printf("WebRTC: No messages received for %v -- closing stale connection.",
 				SnowflakeTimeout)
 			c.Close()
@@ -230,11 +269,16 @@ func (c *WebRTCPeer) establishDataChannel() error {
 		c.lock.Lock()
 		defer c.lock.Unlock()
 		log.Println("WebRTC: DataChannel.OnOpen")
+		c.Out("ts_open", Now())
 		if nil != c.transport {
 			panic("WebRTC: transport already exists.")
 		}
 		// Flush buffered outgoing SOCKS data if necessary.
 		if c.buffer.Len() > 0 {
+			if !c.hasWritten {
+				c.Out("ts_first_send", Now())
+			}
+			c.hasWritten = true
 			dc.Send(c.buffer.Bytes())
 			log.Println("Flushed", c.buffer.Len(), "bytes.")
 			c.buffer.Reset()
@@ -265,6 +309,10 @@ func (c *WebRTCPeer) establishDataChannel() error {
 		if len(msg.Data) <= 0 {
 			log.Println("0 length message---")
 		}
+		if !c.hasRead {
+			c.Out("ts_first_recv", Now())
+		}
+		c.hasRead = true
 		c.BytesLogger.AddInbound(len(msg.Data))
 		n, err := c.writePipe.Write(msg.Data)
 		if err != nil {
@@ -289,12 +337,87 @@ func (c *WebRTCPeer) sendOfferToBroker() {
 		return
 	}
 	offer := c.pc.LocalDescription()
+	offerSDP := util.StripLocalAddresses(offer.SDP)
+	c.Out("offer_sdp", offerSDP)
+	summarizeSDP(c, "offer", offerSDP)
+	c.Out("ts_broker_start", Now())
 	answer, err := c.broker.Negotiate(offer)
+	c.Out("ts_broker_end", Now())
 	if nil != err || nil == answer {
+		c.Out("broker_err", err.Error())
 		log.Printf("BrokerChannel Error: %s", err)
 		answer = nil
 	}
 	c.answerChannel <- answer
+}
+
+func summarizeSDP(c *WebRTCPeer, label, text string) {
+	var desc sdp.SessionDescription
+	err := desc.Unmarshal([]byte(text))
+	if err != nil {
+		panic(err)
+	}
+	numTransportTCP := 0
+	numTransportUDP := 0
+	numTransportOther := 0
+	numAddressIPv4 := 0
+	numAddressIPv6 := 0
+	numAddressLocalHostname := 0
+	numAddressOther := 0
+	for _, m := range desc.MediaDescriptions {
+		if ci := m.ConnectionInformation; ci != nil {
+			c.Out(label+"_c_network_type", ci.NetworkType)
+			c.Out(label+"_c_address_type", ci.AddressType)
+			if ip := net.ParseIP(ci.Address.Address); ip != nil {
+				if ip.IsUnspecified() {
+					c.Out(label+"_c_address_zero", "T")
+				} else {
+					c.Out(label+"_c_address_zero", "F")
+				}
+			}
+		}
+		i := 0
+		for _, a := range m.Attributes {
+			candidate, err := a.ToICECandidate()
+			if err != nil {
+				continue
+			}
+			c.Out(fmt.Sprintf(label+"_candidate_transport.%d", i), candidate.Protocol)
+			c.Out(fmt.Sprintf(label+"_candidate_priority.%d", i), strconv.FormatUint(uint64(candidate.Priority), 10))
+			c.Out(fmt.Sprintf(label+"_candidate_typ.%d", i), candidate.Typ)
+			switch strings.ToLower(candidate.Protocol) {
+			case "tcp":
+				numTransportTCP += 1
+			case "udp":
+				numTransportUDP += 1
+			default:
+				numTransportOther += 1
+			}
+			if ip := net.ParseIP(candidate.Address); ip != nil {
+				if ip.To4() != nil {
+					numAddressIPv4 += 1
+					c.Out(fmt.Sprintf(label+"_candidate_address_type.%d", i), "IP4")
+				} else {
+					numAddressIPv6 += 1
+					c.Out(fmt.Sprintf(label+"_candidate_address_type.%d", i), "IP6")
+				}
+			} else if strings.HasSuffix(strings.ToLower(candidate.Address), ".local") {
+				c.Out(fmt.Sprintf(label+"_candidate_address_type.%d", i), "local_hostname")
+				numAddressLocalHostname += 1
+			} else {
+				c.Out(fmt.Sprintf(label+"_candidate_address_type.%d", i), "other")
+				numAddressOther += 1
+			}
+			i++
+		}
+	}
+	c.Out(label+"_num_transport_tcp", strconv.Itoa(numTransportTCP))
+	c.Out(label+"_num_transport_udp", strconv.Itoa(numTransportUDP))
+	c.Out(label+"_num_transport_other", strconv.Itoa(numTransportOther))
+	c.Out(label+"_num_address_ipv4", strconv.Itoa(numAddressIPv4))
+	c.Out(label+"_num_address_ipv6", strconv.Itoa(numAddressIPv6))
+	c.Out(label+"_num_address_local_hostname", strconv.Itoa(numAddressLocalHostname))
+	c.Out(label+"_num_address_other", strconv.Itoa(numAddressOther))
 }
 
 // Block until an SDP offer is available, send it to either
@@ -318,8 +441,15 @@ func (c *WebRTCPeer) exchangeSDP() error {
 			<-time.After(ReconnectTimeout)
 			answer = nil
 		}
+		if answer == nil {
+			c.attempt += 1
+		}
 	}
 	log.Printf("Received Answer.\n")
+
+	c.Out("answer_sdp", answer.SDP)
+	summarizeSDP(c, "answer", answer.SDP)
+
 	err := c.pc.SetRemoteDescription(*answer)
 	if nil != err {
 		log.Println("WebRTC: Unable to SetRemoteDescription:", err)

@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -33,6 +34,21 @@ func ConnectLoop(snowflakes sf.SnowflakeCollector) {
 		if err != nil {
 			log.Printf("WebRTC: %v  Retrying in %v...",
 				err, sf.ReconnectTimeout)
+		} else {
+			s := snowflakes.Pop()
+			n, err := s.Write([]byte("hello"))
+			s.(*sf.WebRTCPeer).Out("write_n", strconv.Itoa(n))
+			if err != nil {
+				s.(*sf.WebRTCPeer).Out("write_err", err.Error())
+			}
+			var buf [5]byte
+			n, err = s.Read(buf[:])
+			s.(*sf.WebRTCPeer).Out("read_n", strconv.Itoa(n))
+			if err != nil {
+				s.(*sf.WebRTCPeer).Out("read_err", err.Error())
+			}
+			s.(*sf.WebRTCPeer).Out("ts_close", sf.Now())
+			s.Close()
 		}
 		select {
 		case <-time.After(sf.ReconnectTimeout):
@@ -163,7 +179,7 @@ func main() {
 	}
 	go snowflakes.BytesLogger.Log()
 
-	go ConnectLoop(snowflakes)
+	ConnectLoop(snowflakes)
 
 	// Begin goptlib client process.
 	ptInfo, err := pt.ClientSetup(nil)
