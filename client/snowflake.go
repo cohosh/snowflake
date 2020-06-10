@@ -16,12 +16,16 @@ import (
 
 	pt "git.torproject.org/pluggable-transports/goptlib.git"
 	sf "git.torproject.org/pluggable-transports/snowflake.git/client/lib"
+	"git.torproject.org/pluggable-transports/snowflake.git/common/nat"
 	"git.torproject.org/pluggable-transports/snowflake.git/common/safelog"
 	"github.com/pion/webrtc/v2"
 )
 
 const (
 	DefaultSnowflakeCapacity = 1
+	NATUnknown               = "unknown"
+	NATRestricted            = "restricted"
+	NATUnrestricted          = "unrestricted"
 )
 
 // Maintain |SnowflakeCapacity| number of available WebRTC connections, to
@@ -154,10 +158,13 @@ func main() {
 	// Use potentially domain-fronting broker to rendezvous.
 	broker, err := sf.NewBrokerChannel(
 		*brokerURL, *frontDomain, sf.CreateBrokerTransport(),
-		*keepLocalAddresses || *oldKeepLocalAddresses)
+		*keepLocalAddresses || *oldKeepLocalAddresses,
+		NATUnknown)
 	if err != nil {
 		log.Fatalf("parsing broker URL: %v", err)
 	}
+	go updateNATType(iceServers, broker)
+
 	snowflakes.Tongue = sf.NewWebRTCDialer(broker, iceServers)
 
 	// Use a real logger to periodically output how much traffic is happening.
@@ -218,4 +225,27 @@ func main() {
 	}
 	snowflakes.End()
 	log.Println("snowflake is done.")
+}
+
+// loop through all provided STUN servers until we exhaust the list or find
+// one that is compatable with RFC 5780
+func updateNATType(servers []webrtc.ICEServer, broker *sf.BrokerChannel) {
+
+	var restrictedNAT bool
+	var err error
+	for _, server := range servers {
+		addr := strings.TrimPrefix(server.URLs[0], "stun:")
+		restrictedNAT, err = nat.CheckIfRestrictedNAT(addr)
+		if err == nil {
+			if restrictedNAT {
+				broker.SetNATType(NATRestricted)
+			} else {
+				broker.SetNATType(NATUnrestricted)
+			}
+			break
+		}
+	}
+	if err != nil {
+		broker.SetNATType(NATUnknown)
+	}
 }
