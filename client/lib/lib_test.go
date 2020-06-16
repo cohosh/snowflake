@@ -12,6 +12,12 @@ import (
 	. "github.com/smartystreets/goconvey/convey"
 )
 
+const (
+	NATUnknown      = "unknown"
+	NATRestricted   = "restricted"
+	NATUnrestricted = "unrestricted"
+)
+
 type MockTransport struct {
 	statusOverride int
 	body           []byte
@@ -194,7 +200,7 @@ func TestSnowflakeClient(t *testing.T) {
 		}
 
 		Convey("Construct BrokerChannel with no front domain", func() {
-			b, err := NewBrokerChannel("test.broker", "", transport, false)
+			b, err := NewBrokerChannel("test.broker", "", transport, false, NATUnknown)
 			So(b.url, ShouldNotBeNil)
 			So(err, ShouldBeNil)
 			So(b.url.Path, ShouldResemble, "test.broker")
@@ -202,7 +208,7 @@ func TestSnowflakeClient(t *testing.T) {
 		})
 
 		Convey("Construct BrokerChannel *with* front domain", func() {
-			b, err := NewBrokerChannel("test.broker", "front", transport, false)
+			b, err := NewBrokerChannel("test.broker", "front", transport, false, NATUnknown)
 			So(b.url, ShouldNotBeNil)
 			So(err, ShouldBeNil)
 			So(b.url.Path, ShouldResemble, "test.broker")
@@ -211,7 +217,7 @@ func TestSnowflakeClient(t *testing.T) {
 		})
 
 		Convey("BrokerChannel.Negotiate responds with answer", func() {
-			b, err := NewBrokerChannel("test.broker", "", transport, false)
+			b, err := NewBrokerChannel("test.broker", "", transport, false, NATUnknown)
 			So(err, ShouldBeNil)
 			answer, err := b.Negotiate(fakeOffer)
 			So(err, ShouldBeNil)
@@ -222,7 +228,7 @@ func TestSnowflakeClient(t *testing.T) {
 		Convey("BrokerChannel.Negotiate fails with 503", func() {
 			b, err := NewBrokerChannel("test.broker", "",
 				&MockTransport{http.StatusServiceUnavailable, []byte("\n")},
-				false)
+				false, NATUnknown)
 			So(err, ShouldBeNil)
 			answer, err := b.Negotiate(fakeOffer)
 			So(err, ShouldNotBeNil)
@@ -233,7 +239,7 @@ func TestSnowflakeClient(t *testing.T) {
 		Convey("BrokerChannel.Negotiate fails with 400", func() {
 			b, err := NewBrokerChannel("test.broker", "",
 				&MockTransport{http.StatusBadRequest, []byte("\n")},
-				false)
+				false, NATUnknown)
 			So(err, ShouldBeNil)
 			answer, err := b.Negotiate(fakeOffer)
 			So(err, ShouldNotBeNil)
@@ -244,7 +250,7 @@ func TestSnowflakeClient(t *testing.T) {
 		Convey("BrokerChannel.Negotiate fails with large read", func() {
 			b, err := NewBrokerChannel("test.broker", "",
 				&MockTransport{http.StatusOK, make([]byte, 100001, 100001)},
-				false)
+				false, NATUnknown)
 			So(err, ShouldBeNil)
 			answer, err := b.Negotiate(fakeOffer)
 			So(err, ShouldNotBeNil)
@@ -254,7 +260,7 @@ func TestSnowflakeClient(t *testing.T) {
 
 		Convey("BrokerChannel.Negotiate fails with unexpected error", func() {
 			b, err := NewBrokerChannel("test.broker", "",
-				&MockTransport{123, []byte("")}, false)
+				&MockTransport{123, []byte("")}, false, NATUnknown)
 			So(err, ShouldBeNil)
 			answer, err := b.Negotiate(fakeOffer)
 			So(err, ShouldNotBeNil)
