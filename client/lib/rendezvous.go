@@ -36,6 +36,7 @@ type BrokerChannel struct {
 	url                *url.URL
 	transport          http.RoundTripper // Used to make all requests.
 	keepLocalAddresses bool
+	NATType            string
 }
 
 // We make a copy of DefaultTransport because we want the default Dial
@@ -50,7 +51,7 @@ func CreateBrokerTransport() http.RoundTripper {
 // Construct a new BrokerChannel, where:
 // |broker| is the full URL of the facilitating program which assigns proxies
 // to clients, and |front| is the option fronting domain.
-func NewBrokerChannel(broker string, front string, transport http.RoundTripper, keepLocalAddresses bool) (*BrokerChannel, error) {
+func NewBrokerChannel(broker string, front string, transport http.RoundTripper, keepLocalAddresses bool, NATType string) (*BrokerChannel, error) {
 	targetURL, err := url.Parse(broker)
 	if err != nil {
 		return nil, err
@@ -66,6 +67,7 @@ func NewBrokerChannel(broker string, front string, transport http.RoundTripper, 
 
 	bc.transport = transport
 	bc.keepLocalAddresses = keepLocalAddresses
+	bc.NATType = NATType
 	return bc, nil
 }
 
@@ -110,6 +112,8 @@ func (bc *BrokerChannel) Negotiate(offer *webrtc.SessionDescription) (
 	if "" != bc.Host { // Set true host if necessary.
 		request.Host = bc.Host
 	}
+	// include NAT-TYPE
+	request.Header.Set("X-NAT-TYPE", bc.NATType)
 	resp, err := bc.transport.RoundTrip(request)
 	if nil != err {
 		return nil, err
@@ -131,6 +135,11 @@ func (bc *BrokerChannel) Negotiate(offer *webrtc.SessionDescription) (
 	default:
 		return nil, errors.New(BrokerErrorUnexpected)
 	}
+}
+
+func (bc *BrokerChannel) SetNATType(NATType string) {
+	bc.NATType = NATType
+	log.Printf("NAT Type: %s", NATType)
 }
 
 // Implements the |Tongue| interface to catch snowflakes, using BrokerChannel.
