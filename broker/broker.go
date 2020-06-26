@@ -128,6 +128,9 @@ func (ctx *BrokerContext) Broker() {
 			select {
 			case offer := <-snowflake.offerChannel:
 				request.offerChannel <- offer
+				if snowflake.index != -1 {
+					heap.Remove(ctx.snowflakes, snowflake.index)
+				}
 			case <-time.After(time.Second * ProxyTimeout):
 				// This snowflake is no longer available to serve clients.
 				ctx.snowflakeLock.Lock()
@@ -170,7 +173,7 @@ func proxyPolls(ctx *BrokerContext, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sid, proxyType, err := messages.DecodePollRequest(body)
+	_, proxyType, err := messages.DecodePollRequest(body)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		return
@@ -178,6 +181,7 @@ func proxyPolls(ctx *BrokerContext, w http.ResponseWriter, r *http.Request) {
 
 	// Log geoip stats
 	remoteIP, _, err := net.SplitHostPort(r.RemoteAddr)
+	log.Printf("Received proxy at remote IP: %s", remoteIP)
 	if err != nil {
 		log.Println("Error processing proxy IP: ", err.Error())
 	} else {
@@ -187,7 +191,7 @@ func proxyPolls(ctx *BrokerContext, w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Wait for a client to avail an offer to the snowflake, or timeout if nil.
-	offer := ctx.RequestOffer(sid, proxyType)
+	offer := ctx.RequestOffer(remoteIP, proxyType)
 	var b []byte
 	if nil == offer {
 		ctx.metrics.lock.Lock()
@@ -226,6 +230,9 @@ func clientOffers(ctx *BrokerContext, w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
+	serverAddr := r.Header.Get("Snowflake-Server-Address")
+	log.Printf("Asking for snowflake with IP: %s", serverAddr)
+
 	// Immediately fail if there are no snowflakes available.
 	ctx.snowflakeLock.Lock()
 	numSnowflakes := ctx.snowflakes.Len()
@@ -240,7 +247,12 @@ func clientOffers(ctx *BrokerContext, w http.ResponseWriter, r *http.Request) {
 	// Otherwise, find the most available snowflake proxy, and pass the offer to it.
 	// Delete must be deferred in order to correctly process answer request later.
 	ctx.snowflakeLock.Lock()
-	snowflake := heap.Pop(ctx.snowflakes).(*Snowflake)
+	snowflake, ok := ctx.idToSnowflake[serverAddr]
+	if !ok { //no snowflakes at this IP
+		log.Printf("No snowflakes at IP: %s", serverAddr)
+		w.WriteHeader(http.StatusServiceUnavailable)
+		return
+	}
 	ctx.snowflakeLock.Unlock()
 	snowflake.offerChannel <- offer
 
@@ -283,7 +295,9 @@ func proxyAnswers(ctx *BrokerContext, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	answer, id, err := messages.DecodeAnswerRequest(body)
+	remoteIP, _, err := net.SplitHostPort(r.RemoteAddr)
+
+	answer, _, err := messages.DecodeAnswerRequest(body)
 	if err != nil || answer == "" {
 		w.WriteHeader(http.StatusBadRequest)
 		return
@@ -291,7 +305,7 @@ func proxyAnswers(ctx *BrokerContext, w http.ResponseWriter, r *http.Request) {
 
 	var success = true
 	ctx.snowflakeLock.Lock()
-	snowflake, ok := ctx.idToSnowflake[id]
+	snowflake, ok := ctx.idToSnowflake[remoteIP]
 	ctx.snowflakeLock.Unlock()
 	if !ok || nil == snowflake {
 		// The snowflake took too long to respond with an answer, so its client
