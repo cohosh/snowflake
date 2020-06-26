@@ -26,6 +26,26 @@ type dummyAddr struct{}
 func (addr dummyAddr) Network() string { return "dummy" }
 func (addr dummyAddr) String() string  { return "dummy" }
 
+// Maintain |SnowflakeCapacity| number of available WebRTC connections, to
+// transfer to the Tor SOCKS handler when needed.
+func connectLoop(snowflakes SnowflakeCollector) {
+	for {
+		// Check if ending is necessary.
+		_, err := snowflakes.Collect()
+		if err != nil {
+			log.Printf("WebRTC: %v  Retrying in %v...",
+				err, ReconnectTimeout)
+		}
+		select {
+		case <-time.After(ReconnectTimeout):
+			continue
+		case <-snowflakes.Melted():
+			log.Println("ConnectLoop: stopped.")
+			return
+		}
+	}
+}
+
 // newSession returns a new smux.Session and the net.PacketConn it is running
 // over. The net.PacketConn successively connects through Snowflake proxies
 // pulled from snowflakes.
@@ -142,7 +162,21 @@ var sessionManager = sessionManager_{}
 
 // Given an accepted SOCKS connection, establish a WebRTC connection to the
 // remote peer and exchange traffic.
-func Handler(socks net.Conn, snowflakes SnowflakeCollector) error {
+func Handler(socks net.Conn, dialer *WebRTCDialer, max int) error {
+	// start a new SnowflakeCollector for this stream
+	serverAddr := "127.0.0.1" //Note: change this with RACE API value
+
+	// Prepare to collect remote WebRTC peers.
+	snowflakes := NewPeers(max, serverAddr)
+
+	snowflakes.Tongue = dialer
+
+	// Use a real logger to periodically output how much traffic is happening.
+	snowflakes.BytesLogger = NewBytesSyncLogger()
+
+	go connectLoop(snowflakes)
+
+	defer snowflakes.End()
 	// Return the global smux.Session.
 	sess, err := sessionManager.Get(snowflakes)
 	if err != nil {

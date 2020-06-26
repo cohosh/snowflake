@@ -17,9 +17,10 @@ import (
 // Handles preparation of go-webrtc PeerConnection. Only ever has
 // one DataChannel.
 type WebRTCPeer struct {
-	id        string
-	pc        *webrtc.PeerConnection
-	transport *webrtc.DataChannel
+	id         string
+	pc         *webrtc.PeerConnection
+	transport  *webrtc.DataChannel
+	serverAddr string
 
 	recvPipe    *io.PipeReader
 	writePipe   *io.PipeWriter
@@ -34,7 +35,7 @@ type WebRTCPeer struct {
 
 // Construct a WebRTC PeerConnection.
 func NewWebRTCPeer(config *webrtc.Configuration,
-	broker *BrokerChannel) (*WebRTCPeer, error) {
+	broker *BrokerChannel, serverAddr string) (*WebRTCPeer, error) {
 	connection := new(WebRTCPeer)
 	{
 		var buf [8]byte
@@ -49,6 +50,8 @@ func NewWebRTCPeer(config *webrtc.Configuration,
 
 	// Pipes remain the same even when DataChannel gets switched.
 	connection.recvPipe, connection.writePipe = io.Pipe()
+
+	connection.serverAddr = serverAddr
 
 	err := connection.connect(config, broker)
 	if err != nil {
@@ -112,7 +115,7 @@ func (c *WebRTCPeer) connect(config *webrtc.Configuration, broker *BrokerChannel
 	if err != nil {
 		return err
 	}
-	answer := exchangeSDP(broker, c.pc.LocalDescription())
+	answer := c.exchangeSDP(broker, c.pc.LocalDescription())
 	log.Printf("Received Answer.\n")
 	err = c.pc.SetRemoteDescription(*answer)
 	if nil != err {
@@ -219,11 +222,11 @@ func (c *WebRTCPeer) establishDataChannel() (*webrtc.DataChannel, error) {
 
 // exchangeSDP sends the local SDP offer to the Broker, awaits the SDP answer,
 // and returns the answer.
-func exchangeSDP(broker *BrokerChannel, offer *webrtc.SessionDescription) *webrtc.SessionDescription {
+func (c *WebRTCPeer) exchangeSDP(broker *BrokerChannel, offer *webrtc.SessionDescription) *webrtc.SessionDescription {
 	// Keep trying the same offer until a valid answer arrives.
 	for {
 		// Send offer to broker (blocks).
-		answer, err := broker.Negotiate(offer)
+		answer, err := broker.Negotiate(offer, c.serverAddr)
 		if err == nil {
 			return answer
 		}

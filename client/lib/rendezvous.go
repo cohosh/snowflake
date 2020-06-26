@@ -83,7 +83,7 @@ func limitedRead(r io.Reader, limit int64) ([]byte, error) {
 //
 // Send an SDP offer to the broker, which assigns a proxy and responds
 // with an SDP answer from a designated remote WebRTC peer.
-func (bc *BrokerChannel) Negotiate(offer *webrtc.SessionDescription) (
+func (bc *BrokerChannel) Negotiate(offer *webrtc.SessionDescription, serverAddr string) (
 	*webrtc.SessionDescription, error) {
 	log.Println("Negotiating via BrokerChannel...\nTarget URL: ",
 		bc.Host, "\nFront URL:  ", bc.url.Host)
@@ -110,6 +110,7 @@ func (bc *BrokerChannel) Negotiate(offer *webrtc.SessionDescription) (
 	if "" != bc.Host { // Set true host if necessary.
 		request.Host = bc.Host
 	}
+	request.Header.Set("Snowflake-Server-Address", serverAddr)
 	resp, err := bc.transport.RoundTrip(request)
 	if nil != err {
 		return nil, err
@@ -150,8 +151,8 @@ func NewWebRTCDialer(broker *BrokerChannel, iceServers []webrtc.ICEServer) *WebR
 }
 
 // Initialize a WebRTC Connection by signaling through the broker.
-func (w WebRTCDialer) Catch() (*WebRTCPeer, error) {
+func (w WebRTCDialer) Catch(serverAddr string) (*WebRTCPeer, error) {
 	// TODO: [#25591] Fetch ICE server information from Broker.
 	// TODO: [#25596] Consider TURN servers here too.
-	return NewWebRTCPeer(w.webrtcConfig, w.BrokerChannel)
+	return NewWebRTCPeer(w.webrtcConfig, w.BrokerChannel, serverAddr)
 }

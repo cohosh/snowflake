@@ -26,16 +26,19 @@ type Peers struct {
 	activePeers   *list.List
 	capacity      int
 
+	serverAddr string
+
 	melt chan struct{}
 }
 
 // Construct a fresh container of remote peers.
-func NewPeers(max int) *Peers {
+func NewPeers(max int, serverAddr string) *Peers {
 	p := &Peers{capacity: max}
 	// Use buffered go channel to pass snowflakes onwards to the SOCKS handler.
 	p.snowflakeChan = make(chan *WebRTCPeer, max)
 	p.activePeers = list.New()
 	p.melt = make(chan struct{})
+	p.serverAddr = serverAddr
 	return p
 }
 
@@ -52,7 +55,7 @@ func (p *Peers) Collect() (*WebRTCPeer, error) {
 		return nil, errors.New("missing Tongue to catch Snowflakes with")
 	}
 	// BUG: some broker conflict here.
-	connection, err := p.Tongue.Catch()
+	connection, err := p.Tongue.Catch(p.serverAddr)
 	if nil != err {
 		return nil, err
 	}
